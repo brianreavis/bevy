@@ -10,7 +10,7 @@ use bevy_ecs::{
     schedule::IntoSystemConfigs,
     system::{Res, ResMut, Resource},
 };
-use bevy_log::{error, info};
+use bevy_utils::tracing::{info, error};
 use bevy_utils::{Duration, HashMap, Instant};
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
