@@ -181,6 +181,13 @@ pub trait AssetReader: Send + Sync + 'static {
             Ok(meta_bytes)
         }
     }
+    /// Returns default retry settings to use for a particular failed asset load attempt using this reader.
+    fn get_default_retry_settings(
+        &self,
+        _load_error: &UntypedAssetLoadFailedEvent,
+    ) -> AssetLoadRetrySettings {
+        AssetLoadRetrySettings::no_retries()
+    }
 }
 
 /// Equivalent to an [`AssetReader`] but using boxed futures, necessary eg. when using a `dyn AssetReader`,
@@ -209,6 +216,11 @@ pub trait ErasedAssetReader: Send + Sync + 'static {
         &'a self,
         path: &'a Path,
     ) -> BoxedFuture<Result<Vec<u8>, AssetReaderError>>;
+    /// Returns default retry settings to use for a particular failed asset load attempt using this reader.
+    fn get_default_retry_settings(
+        &self,
+        _load_error: &UntypedAssetLoadFailedEvent,
+    ) -> AssetLoadRetrySettings;
 }
 
 impl<T: AssetReader> ErasedAssetReader for T {
@@ -249,9 +261,9 @@ impl<T: AssetReader> ErasedAssetReader for T {
     /// Returns default retry settings to use for a particular failed asset load attempt using this reader.
     fn get_default_retry_settings(
         &self,
-        _load_error: &UntypedAssetLoadFailedEvent,
+        load_error: &UntypedAssetLoadFailedEvent,
     ) -> AssetLoadRetrySettings {
-        AssetLoadRetrySettings::no_retries()
+        Self::get_default_retry_settings(&self, load_error)
     }
 }
 
