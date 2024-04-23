@@ -10,7 +10,7 @@ use bevy_ecs::{
     schedule::IntoSystemConfigs,
     system::{Res, ResMut, Resource},
 };
-use bevy_utils::tracing::{info, error};
+use bevy_utils::tracing::{error, info};
 use bevy_utils::{Duration, HashMap, Instant};
 use serde::{Deserialize, Serialize};
 use std::io::ErrorKind;
@@ -397,13 +397,13 @@ pub fn asset_load_retry_cleanup(
             return now < item.scheduled_at;
         }
         let load_state = asset_server.get_load_state_for_path(&item.path);
-        let should_drop = load_state.map_or(true, |load_state| {
+        let should_drop = load_state.as_ref().map_or(true, |load_state| {
             if item.is_final_attempt() && item.status == AssetLoadRetryStatus::Loading {
                 // If we're on the final retry attempt, drop once the status is anything but loading
-                load_state != LoadState::Loading
+                load_state != &LoadState::Loading
             } else {
                 // If there are still future retries that will be attempted, only drop if the asset's been dropped or succeeded.
-                load_state == LoadState::Loaded
+                load_state == &LoadState::Loaded
             }
         });
         if should_drop {
@@ -452,7 +452,7 @@ pub fn asset_load_retry(
                 // Check that the asset hasn't been loaded or dropped while we've been waiting.
                 let load_state = asset_server.get_load_state_for_path(&item.path);
                 let should_load = load_state.map_or(false, |load_state| {
-                    load_state == LoadState::Failed || load_state == LoadState::NotLoaded
+                    matches!(load_state, LoadState::Failed(_)) || load_state == LoadState::NotLoaded
                 });
 
                 if should_load {
