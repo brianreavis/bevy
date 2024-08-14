@@ -20,7 +20,7 @@ plugin_group! {
         #[cfg(feature = "bevy_asset")]
         bevy_asset:::AssetPlugin,
         #[cfg(feature = "bevy_asset")]
-        bevy_asset::retry::AssetLoadRetryPlugin,
+        bevy_asset::retry:::AssetLoadRetryPlugin,
         #[cfg(feature = "bevy_scene")]
         bevy_scene:::ScenePlugin,
         #[cfg(feature = "bevy_winit")]
