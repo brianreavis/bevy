@@ -1,6 +1,6 @@
 [package]
 name = "bevy_transform"
-version = "0.15.0-dev"
+version = "0.14.1"
 edition = "2021"
 description = "Provides transform functionality for Bevy Engine"
 homepage = "https://bevyengine.org"
@@ -10,22 +10,22 @@ keywords = ["bevy"]
 
 [dependencies]
 # bevy
-bevy_app = { path = "../bevy_app", version = "0.15.0-dev", optional = true }
-bevy_ecs = { path = "../bevy_ecs", version = "0.15.0-dev", features = [
-  "bevy_reflect",
+bevy_app = { path = "../bevy_app", version = "0.14.1", optional = true }
+bevy_ecs = { path = "../bevy_ecs", version = "0.14.1", features = [
+    "bevy_reflect",
 ], optional = true }
-bevy_hierarchy = { path = "../bevy_hierarchy", version = "0.15.0-dev", optional = true }
-bevy_math = { path = "../bevy_math", version = "0.15.0-dev", default-features = false }
-bevy_reflect = { path = "../bevy_reflect", version = "0.15.0-dev", features = [
-  "bevy",
+bevy_hierarchy = { path = "../bevy_hierarchy", version = "0.14.1", optional = true }
+bevy_math = { path = "../bevy_math", version = "0.14.1", default-features = false }
+bevy_reflect = { path = "../bevy_reflect", version = "0.14.1", features = [
+    "bevy",
 ], optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror = "1.0"
 
 [dev-dependencies]
-bevy_tasks = { path = "../bevy_tasks", version = "0.15.0-dev" }
-bevy_math = { path = "../bevy_math", version = "0.15.0-dev", default-features = false, features = [
-  "approx",
+bevy_tasks = { path = "../bevy_tasks", version = "0.14.1" }
+bevy_math = { path = "../bevy_math", version = "0.14.1", default-features = false, features = [
+    "approx",
 ] }
 approx = "0.5.1"
 
@@ -35,11 +35,11 @@ approx = "0.5.1"
 # This exists because it allows opting out of all of this, leaving only a bare-bones transform struct,
 # which enables users to depend on that without needing the larger Bevy dependency tree.
 bevy-support = [
-  "dep:bevy_app",
-  "dep:bevy_ecs",
-  "dep:bevy_hierarchy",
-  "dep:bevy_reflect",
-  "bevy_math/bevy_reflect",
+    "dep:bevy_app",
+    "dep:bevy_ecs",
+    "dep:bevy_hierarchy",
+    "dep:bevy_reflect",
+    "bevy_math/bevy_reflect",
 ]
 
 # Turning off default features leaves you with a barebones
