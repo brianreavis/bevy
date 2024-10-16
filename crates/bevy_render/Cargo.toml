@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 keywords = ["bevy"]
 
 [features]
+avif = ["image/avif-native"]
 png = ["image/png"]
 exr = ["image/exr"]
 hdr = ["image/hdr"]
