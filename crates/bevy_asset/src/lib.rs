@@ -151,6 +151,7 @@ extern crate core;
 pub mod io;
 pub mod meta;
 pub mod processor;
+pub mod retry;
 pub mod saver;
 pub mod transformer;
 
@@ -163,6 +164,7 @@ pub mod prelude {
 
     #[doc(hidden)]
     pub use crate::{
+        retry::{AssetLoadRetrier, AssetLoadRetryPlugin, AssetLoadRetrySettings},
         Asset, AssetApp, AssetEvent, AssetId, AssetMode, AssetPlugin, AssetServer, Assets,
         DirectAssetAccessExt, Handle, UntypedHandle,
     };
