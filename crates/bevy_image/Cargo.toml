@@ -14,6 +14,7 @@ default = ["bevy_reflect"]
 bevy_reflect = ["dep:bevy_reflect", "bevy_math/bevy_reflect"]
 
 # Image formats
+avif = ["image/avif-native"]
 basis-universal = ["dep:basis-universal"]
 bmp = ["image/bmp"]
 dds = ["ddsfile", "bevy_core_pipeline/dds"]
