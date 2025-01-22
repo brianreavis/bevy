@@ -5,14 +5,15 @@ use crate::{
 use bevy_app::{App, Plugin, PreUpdate};
 use bevy_ecs::{
     event::EventReader,
+    resource::Resource,
     schedule::IntoSystemConfigs,
-    system::{Res, ResMut, Resource},
+    system::{Res, ResMut},
 };
-use bevy_utils::{HashMap, Instant};
+use bevy_utils::HashMap;
 use core::time::Duration;
 use serde::{Deserialize, Serialize};
-use std::any::TypeId;
-use std::io::ErrorKind;
+use std::{any::TypeId, boxed::Box, time::Instant};
+use std::{borrow::ToOwned, io::ErrorKind};
 use tracing::{error, info};
 
 #[allow(unused_imports)]
