@@ -1,6 +1,6 @@
 [package]
 name = "bevy_input_focus"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Keyboard focus management"
 homepage = "https://bevyengine.org"
@@ -14,21 +14,21 @@ default = ["bevy_reflect"]
 
 ## Adds runtime reflection support using `bevy_reflect`.
 bevy_reflect = [
-  "dep:bevy_reflect",
-  "bevy_app/bevy_reflect",
-  "bevy_ecs/bevy_reflect",
-  "bevy_math/bevy_reflect",
+    "dep:bevy_reflect",
+    "bevy_app/bevy_reflect",
+    "bevy_ecs/bevy_reflect",
+    "bevy_math/bevy_reflect",
 ]
 
 [dependencies]
 # bevy
-bevy_app = { path = "../bevy_app", version = "0.16.0-dev", default-features = false }
-bevy_ecs = { path = "../bevy_ecs", version = "0.16.0-dev", default-features = false }
-bevy_input = { path = "../bevy_input", version = "0.16.0-dev", default-features = false }
-bevy_math = { path = "../bevy_math", version = "0.16.0-dev", default-features = false }
-bevy_window = { path = "../bevy_window", version = "0.16.0-dev", default-features = false }
-bevy_reflect = { path = "../bevy_reflect", version = "0.16.0-dev", features = [
-  "glam",
+bevy_app = { path = "../bevy_app", version = "0.15.0", default-features = false }
+bevy_ecs = { path = "../bevy_ecs", version = "0.15.0", default-features = false }
+bevy_input = { path = "../bevy_input", version = "0.15.0", default-features = false }
+bevy_math = { path = "../bevy_math", version = "0.15.0", default-features = false }
+bevy_window = { path = "../bevy_window", version = "0.15.0", default-features = false }
+bevy_reflect = { path = "../bevy_reflect", version = "0.15.0", features = [
+    "glam",
 ], default-features = false, optional = true }
 
 # other

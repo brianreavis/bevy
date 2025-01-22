@@ -1,6 +1,6 @@
 [package]
 name = "bevy_ecs"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Bevy Engine's entity component system"
 homepage = "https://bevyengine.org"
@@ -64,49 +64,49 @@ edge_executor = ["dep:bevy_tasks", "bevy_tasks/edge_executor"]
 ## on `no_std` targets, but provides access to certain additional features on
 ## supported platforms.
 std = [
-  "bevy_reflect?/std",
-  "bevy_tasks/std",
-  "bevy_utils/std",
-  "bitflags/std",
-  "concurrent-queue/std",
-  "disqualified/alloc",
-  "fixedbitset/std",
-  "indexmap/std",
-  "serde?/std",
-  "nonmax/std",
-  "arrayvec?/std",
-  "log/std",
-  "bevy_platform_support/std",
+    "bevy_reflect?/std",
+    "bevy_tasks/std",
+    "bevy_utils/std",
+    "bitflags/std",
+    "concurrent-queue/std",
+    "disqualified/alloc",
+    "fixedbitset/std",
+    "indexmap/std",
+    "serde?/std",
+    "nonmax/std",
+    "arrayvec?/std",
+    "log/std",
+    "bevy_platform_support/std",
 ]
 
 ## `critical-section` provides the building blocks for synchronization primitives
 ## on all platforms, including `no_std`.
 critical-section = [
-  "bevy_tasks?/critical-section",
-  "bevy_platform_support/critical-section",
-  "bevy_reflect?/critical-section",
+    "bevy_tasks?/critical-section",
+    "bevy_platform_support/critical-section",
+    "bevy_reflect?/critical-section",
 ]
 
 ## `portable-atomic` provides additional platform support for atomic types and
 ## operations, even on targets without native support.
 portable-atomic = [
-  "bevy_tasks?/portable-atomic",
-  "bevy_platform_support/portable-atomic",
-  "concurrent-queue/portable-atomic",
-  "spin/portable_atomic",
-  "bevy_reflect?/portable-atomic",
+    "bevy_tasks?/portable-atomic",
+    "bevy_platform_support/portable-atomic",
+    "concurrent-queue/portable-atomic",
+    "spin/portable_atomic",
+    "bevy_reflect?/portable-atomic",
 ]
 
 [dependencies]
-bevy_ptr = { path = "../bevy_ptr", version = "0.16.0-dev" }
-bevy_reflect = { path = "../bevy_reflect", version = "0.16.0-dev", default-features = false, optional = true }
-bevy_tasks = { path = "../bevy_tasks", version = "0.16.0-dev", default-features = false, optional = true }
-bevy_utils = { path = "../bevy_utils", version = "0.16.0-dev", default-features = false, features = [
-  "alloc",
+bevy_ptr = { path = "../bevy_ptr", version = "0.15.0" }
+bevy_reflect = { path = "../bevy_reflect", version = "0.15.0", default-features = false, optional = true }
+bevy_tasks = { path = "../bevy_tasks", version = "0.15.0", default-features = false, optional = true }
+bevy_utils = { path = "../bevy_utils", version = "0.15.0", default-features = false, features = [
+    "alloc",
 ] }
-bevy_ecs_macros = { path = "macros", version = "0.16.0-dev" }
-bevy_platform_support = { path = "../bevy_platform_support", version = "0.16.0-dev", default-features = false, features = [
-  "alloc",
+bevy_ecs_macros = { path = "macros", version = "0.15.0" }
+bevy_platform_support = { path = "../bevy_platform_support", version = "0.15.0", default-features = false, features = [
+    "alloc",
 ] }
 
 bitflags = { version = "2.3", default-features = false }
@@ -114,14 +114,14 @@ concurrent-queue = { version = "2.5.0", default-features = false }
 disqualified = { version = "1.0", default-features = false }
 fixedbitset = { version = "0.5", default-features = false }
 serde = { version = "1", default-features = false, features = [
-  "alloc",
+    "alloc",
 ], optional = true }
 thiserror = { version = "2", default-features = false }
 derive_more = { version = "1", default-features = false, features = [
-  "from",
-  "display",
-  "into",
-  "as_ref",
+    "from",
+    "display",
+    "into",
+    "as_ref",
 ] }
 nonmax = { version = "0.5", default-features = false }
 arrayvec = { version = "0.7.4", default-features = false, optional = true }
@@ -129,8 +129,8 @@ smallvec = { version = "1", features = ["union", "const_generics"] }
 indexmap = { version = "2.5.0", default-features = false }
 variadics_please = { version = "1.1", default-features = false }
 spin = { version = "0.9.8", default-features = false, features = [
-  "spin_mutex",
-  "rwlock",
+    "spin_mutex",
+    "rwlock",
 ] }
 tracing = { version = "0.1", default-features = false, optional = true }
 log = { version = "0.4", default-features = false }

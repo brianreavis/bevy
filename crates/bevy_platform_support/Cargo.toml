@@ -1,6 +1,6 @@
 [package]
 name = "bevy_platform_support"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Platform compatibility support for Bevy Engine"
 homepage = "https://bevyengine.org"
@@ -17,10 +17,10 @@ default = ["std"]
 ## on `no_std` targets, but provides access to certain additional features on
 ## supported platforms.
 std = [
-  "alloc",
-  "critical-section?/std",
-  "portable-atomic?/std",
-  "portable-atomic-util?/std",
+    "alloc",
+    "critical-section?/std",
+    "portable-atomic?/std",
+    "portable-atomic-util?/std",
 ]
 
 alloc = ["portable-atomic-util?/alloc"]
@@ -36,7 +36,7 @@ portable-atomic = ["dep:portable-atomic", "dep:portable-atomic-util"]
 [dependencies]
 critical-section = { version = "1.2.0", default-features = false, optional = true }
 portable-atomic = { version = "1", default-features = false, features = [
-  "fallback",
+    "fallback",
 ], optional = true }
 portable-atomic-util = { version = "0.2.4", default-features = false, optional = true }
 

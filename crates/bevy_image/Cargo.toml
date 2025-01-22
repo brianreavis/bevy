@@ -1,6 +1,6 @@
 [package]
 name = "bevy_image"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Provides image types for Bevy Engine"
 homepage = "https://bevyengine.org"
@@ -39,17 +39,17 @@ zstd = ["ruzstd"]
 
 [dependencies]
 # bevy
-bevy_app = { path = "../bevy_app", version = "0.16.0-dev" }
-bevy_asset = { path = "../bevy_asset", version = "0.16.0-dev" }
-bevy_color = { path = "../bevy_color", version = "0.16.0-dev", features = [
-  "serialize",
-  "wgpu-types",
+bevy_app = { path = "../bevy_app", version = "0.15.0" }
+bevy_asset = { path = "../bevy_asset", version = "0.15.0" }
+bevy_color = { path = "../bevy_color", version = "0.15.0", features = [
+    "serialize",
+    "wgpu-types",
 ] }
-bevy_math = { path = "../bevy_math", version = "0.16.0-dev" }
-bevy_reflect = { path = "../bevy_reflect", version = "0.16.0-dev", features = [
-  "bevy",
+bevy_math = { path = "../bevy_math", version = "0.15.0" }
+bevy_reflect = { path = "../bevy_reflect", version = "0.15.0", features = [
+    "bevy",
 ], optional = true }
-bevy_utils = { path = "../bevy_utils", version = "0.16.0-dev" }
+bevy_utils = { path = "../bevy_utils", version = "0.15.0" }
 
 # rendering
 image = { version = "0.25.2", default-features = false }
@@ -75,8 +75,8 @@ basis-universal = { version = "0.3.0", optional = true }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-bevy_ecs = { path = "../bevy_ecs", version = "0.16.0-dev" }
-bevy_sprite = { path = "../bevy_sprite", version = "0.16.0-dev" }
+bevy_ecs = { path = "../bevy_ecs", version = "0.15.0" }
+bevy_sprite = { path = "../bevy_sprite", version = "0.15.0" }
 
 [lints]
 workspace = true
