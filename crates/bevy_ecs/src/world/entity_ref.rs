@@ -4206,7 +4206,6 @@ mod tests {
     use std::sync::OnceLock;
 
     use crate::{
-        self as bevy_ecs,
         change_detection::MutUntyped,
         component::ComponentId,
         prelude::*,

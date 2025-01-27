@@ -385,7 +385,6 @@ mod tests {
     use crate::query::{QueryState, With};
     use crate::system::Query;
     use crate::world::Mut;
-    use crate::{self as bevy_ecs};
 
     use super::UniqueEntityIter;
 
