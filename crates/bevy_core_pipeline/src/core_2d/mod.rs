@@ -36,7 +36,7 @@ use bevy_asset::UntypedAssetId;
 use bevy_platform_support::collections::{HashMap, HashSet};
 use bevy_render::{
     batching::gpu_preprocessing::GpuPreprocessingMode,
-    render_phase::PhaseItemBatchSetKey,
+    render_phase::{sweep_old_entities, PhaseItemBatchSetKey},
     view::{ExtractedView, RetainedViewEntity},
 };
 pub use camera_2d::*;
@@ -94,6 +94,8 @@ impl Plugin for Core2dPlugin {
                 (
                     sort_phase_system::<Transparent2d>.in_set(RenderSet::PhaseSort),
                     prepare_core_2d_depth_textures.in_set(RenderSet::PrepareResources),
+                    sweep_old_entities::<Opaque2d>.in_set(RenderSet::QueueSweep),
+                    sweep_old_entities::<AlphaMask2d>.in_set(RenderSet::QueueSweep),
                 ),
             );
 
