@@ -1,6 +1,6 @@
 [package]
 name = "bevy_image"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Provides image types for Bevy Engine"
 homepage = "https://bevyengine.org"
@@ -32,9 +32,9 @@ tga = ["image/tga"]
 tiff = ["image/tiff"]
 webp = ["image/webp"]
 serialize = [
-  "bevy_reflect",
-  "bevy_platform_support/serialize",
-  "bevy_utils/serde",
+    "bevy_reflect",
+    "bevy_platform_support/serialize",
+    "bevy_utils/serde",
 ]
 
 # For ktx2 supercompression
@@ -43,19 +43,19 @@ zstd = ["ruzstd"]
 
 [dependencies]
 # bevy
-bevy_app = { path = "../bevy_app", version = "0.16.0-dev" }
-bevy_asset = { path = "../bevy_asset", version = "0.16.0-dev" }
-bevy_color = { path = "../bevy_color", version = "0.16.0-dev", features = [
-  "serialize",
-  "wgpu-types",
+bevy_app = { path = "../bevy_app", version = "0.15.0" }
+bevy_asset = { path = "../bevy_asset", version = "0.15.0" }
+bevy_color = { path = "../bevy_color", version = "0.15.0", features = [
+    "serialize",
+    "wgpu-types",
 ] }
-bevy_math = { path = "../bevy_math", version = "0.16.0-dev" }
-bevy_reflect = { path = "../bevy_reflect", version = "0.16.0-dev", features = [
-  "bevy",
+bevy_math = { path = "../bevy_math", version = "0.15.0" }
+bevy_reflect = { path = "../bevy_reflect", version = "0.15.0", features = [
+    "bevy",
 ], optional = true }
-bevy_utils = { path = "../bevy_utils", version = "0.16.0-dev" }
-bevy_platform_support = { path = "../bevy_platform_support", version = "0.16.0-dev", default-features = false, features = [
-  "std",
+bevy_utils = { path = "../bevy_utils", version = "0.15.0" }
+bevy_platform_support = { path = "../bevy_platform_support", version = "0.15.0", default-features = false, features = [
+    "std",
 ] }
 
 # rendering
@@ -81,8 +81,8 @@ tracing = { version = "0.1", default-features = false, features = ["std"] }
 half = { version = "2.4.1" }
 
 [dev-dependencies]
-bevy_ecs = { path = "../bevy_ecs", version = "0.16.0-dev" }
-bevy_sprite = { path = "../bevy_sprite", version = "0.16.0-dev" }
+bevy_ecs = { path = "../bevy_ecs", version = "0.15.0" }
+bevy_sprite = { path = "../bevy_sprite", version = "0.15.0" }
 
 [lints]
 workspace = true

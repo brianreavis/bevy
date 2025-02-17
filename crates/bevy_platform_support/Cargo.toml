@@ -1,6 +1,6 @@
 [package]
 name = "bevy_platform_support"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Platform compatibility support for Bevy Engine"
 homepage = "https://bevyengine.org"
@@ -22,12 +22,12 @@ serialize = ["hashbrown/serde"]
 ## on `no_std` targets, but provides access to certain additional features on
 ## supported platforms.
 std = [
-  "alloc",
-  "critical-section?/std",
-  "portable-atomic?/std",
-  "portable-atomic-util?/std",
-  "spin/std",
-  "foldhash/std",
+    "alloc",
+    "critical-section?/std",
+    "portable-atomic?/std",
+    "portable-atomic-util?/std",
+    "spin/std",
+    "foldhash/std",
 ]
 
 alloc = ["portable-atomic-util?/alloc", "dep:hashbrown"]
@@ -39,29 +39,29 @@ critical-section = ["dep:critical-section", "portable-atomic?/critical-section"]
 ## `portable-atomic` provides additional platform support for atomic types and
 ## operations, even on targets without native support.
 portable-atomic = [
-  "dep:portable-atomic",
-  "dep:portable-atomic-util",
-  "spin/portable_atomic",
+    "dep:portable-atomic",
+    "dep:portable-atomic-util",
+    "spin/portable_atomic",
 ]
 
 [dependencies]
 critical-section = { version = "1.2.0", default-features = false, optional = true }
 portable-atomic = { version = "1", default-features = false, features = [
-  "fallback",
+    "fallback",
 ], optional = true }
 portable-atomic-util = { version = "0.2.4", default-features = false, optional = true }
 spin = { version = "0.9.8", default-features = false, features = [
-  "mutex",
-  "spin_mutex",
-  "rwlock",
-  "once",
-  "lazy",
-  "barrier",
+    "mutex",
+    "spin_mutex",
+    "rwlock",
+    "once",
+    "lazy",
+    "barrier",
 ] }
 foldhash = { version = "0.1.3", default-features = false }
 hashbrown = { version = "0.15.1", features = [
-  "equivalent",
-  "raw-entry",
+    "equivalent",
+    "raw-entry",
 ], optional = true, default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

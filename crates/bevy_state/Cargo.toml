@@ -1,6 +1,6 @@
 [package]
 name = "bevy_state"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2021"
 description = "Finite state machines for Bevy"
 homepage = "https://bevyengine.org"
@@ -15,9 +15,9 @@ default = ["std", "bevy_reflect", "bevy_app"]
 
 ## Adds runtime reflection support using `bevy_reflect`.
 bevy_reflect = [
-  "dep:bevy_reflect",
-  "bevy_ecs/bevy_reflect",
-  "bevy_app?/bevy_reflect",
+    "dep:bevy_reflect",
+    "bevy_ecs/bevy_reflect",
+    "bevy_app?/bevy_reflect",
 ]
 
 ## Adds integration with the `bevy_app` plugin API.
@@ -29,41 +29,41 @@ bevy_app = ["dep:bevy_app"]
 ## on `no_std` targets, but provides access to certain additional features on
 ## supported platforms.
 std = [
-  "bevy_ecs/std",
-  "bevy_utils/std",
-  "bevy_reflect?/std",
-  "bevy_app?/std",
-  "bevy_platform_support/std",
+    "bevy_ecs/std",
+    "bevy_utils/std",
+    "bevy_reflect?/std",
+    "bevy_app?/std",
+    "bevy_platform_support/std",
 ]
 
 ## `critical-section` provides the building blocks for synchronization primitives
 ## on all platforms, including `no_std`.
 critical-section = [
-  "bevy_ecs/critical-section",
-  "bevy_utils/critical-section",
-  "bevy_app?/critical-section",
-  "bevy_reflect?/critical-section",
-  "bevy_platform_support/critical-section",
+    "bevy_ecs/critical-section",
+    "bevy_utils/critical-section",
+    "bevy_app?/critical-section",
+    "bevy_reflect?/critical-section",
+    "bevy_platform_support/critical-section",
 ]
 
 ## `portable-atomic` provides additional platform support for atomic types and
-## operations, even on targets without native support. 
+## operations, even on targets without native support.
 portable-atomic = [
-  "bevy_ecs/portable-atomic",
-  "bevy_utils/portable-atomic",
-  "bevy_app?/portable-atomic",
-  "bevy_reflect?/portable-atomic",
-  "bevy_platform_support/portable-atomic",
+    "bevy_ecs/portable-atomic",
+    "bevy_utils/portable-atomic",
+    "bevy_app?/portable-atomic",
+    "bevy_reflect?/portable-atomic",
+    "bevy_platform_support/portable-atomic",
 ]
 
 [dependencies]
 # bevy
-bevy_ecs = { path = "../bevy_ecs", version = "0.16.0-dev", default-features = false }
-bevy_state_macros = { path = "macros", version = "0.16.0-dev" }
-bevy_utils = { path = "../bevy_utils", version = "0.16.0-dev", default-features = false }
-bevy_reflect = { path = "../bevy_reflect", version = "0.16.0-dev", default-features = false, optional = true }
-bevy_app = { path = "../bevy_app", version = "0.16.0-dev", default-features = false, optional = true }
-bevy_platform_support = { path = "../bevy_platform_support", version = "0.16.0-dev", default-features = false }
+bevy_ecs = { path = "../bevy_ecs", version = "0.15.0", default-features = false }
+bevy_state_macros = { path = "macros", version = "0.15.0" }
+bevy_utils = { path = "../bevy_utils", version = "0.15.0", default-features = false }
+bevy_reflect = { path = "../bevy_reflect", version = "0.15.0", default-features = false, optional = true }
+bevy_app = { path = "../bevy_app", version = "0.15.0", default-features = false, optional = true }
+bevy_platform_support = { path = "../bevy_platform_support", version = "0.15.0", default-features = false }
 variadics_please = "1.1"
 
 # other
