@@ -273,7 +273,6 @@ pub(crate) fn ktx2_buffer_to_image_using_rust(
                     }
                     texture_format
                 },
-                _ => return Err(TextureError::TranscodeError("Unsupported texture format".to_string())),
             };
             levels = transcoded;
             Ok(texture_format)
