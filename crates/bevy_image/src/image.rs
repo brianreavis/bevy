@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
 use wgpu_types::{
-    AddressMode, CompareFunction, Extent3d, Features, FilterMode, SamplerBorderColor,
+    AddressMode, AstcChannel, CompareFunction, Extent3d, Features, FilterMode, SamplerBorderColor,
     SamplerDescriptor, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages,
     TextureViewDescriptor,
 };
@@ -977,9 +977,7 @@ impl Image {
                 is_srgb,
             )?,
             #[cfg(feature = "ktx2")]
-            ImageFormat::Ktx2 => {
-                ktx2_buffer_to_image(buffer, supported_compressed_formats, is_srgb)?
-            }
+            ImageFormat::Ktx2 => ktx2_buffer_to_image(buffer, supported_compressed_formats)?,
             #[expect(
                 clippy::allow_attributes,
                 reason = "`unreachable_patterns` may not always lint"
@@ -1502,18 +1500,6 @@ pub enum DataFormat {
     Rg,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum TranscodeFormat {
-    Etc1s,
-    Uastc(DataFormat),
-    // Has to be transcoded to R8Unorm for use with `wgpu`
-    R8UnormSrgb,
-    // Has to be transcoded to R8G8Unorm for use with `wgpu`
-    Rg8UnormSrgb,
-    // Has to be transcoded to Rgba8 for use with `wgpu`
-    Rgb8,
-}
-
 /// An error that occurs when accessing specific pixels in a texture
 #[derive(Error, Debug)]
 pub enum TextureAccessError {
@@ -1544,8 +1530,6 @@ pub enum TextureError {
     InvalidData(String),
     #[error("transcode error: {0}")]
     TranscodeError(String),
-    #[error("format requires transcoding: {0:?}")]
-    FormatRequiresTranscodingError(TranscodeFormat),
     /// Only cubemaps with six faces are supported.
     #[error("only cubemaps with six faces are supported")]
     IncompleteCubemap,
@@ -1608,8 +1592,9 @@ bitflags::bitflags! {
     pub struct CompressedImageFormats: u32 {
         const NONE     = 0;
         const ASTC_LDR = 1 << 0;
-        const BC       = 1 << 1;
-        const ETC2     = 1 << 2;
+        const ASTC_HDR = 1 << 1;
+        const BC       = 1 << 2;
+        const ETC2     = 1 << 3;
     }
 }
 
@@ -1618,6 +1603,9 @@ impl CompressedImageFormats {
         let mut supported_compressed_formats = Self::default();
         if features.contains(Features::TEXTURE_COMPRESSION_ASTC) {
             supported_compressed_formats |= Self::ASTC_LDR;
+        }
+        if features.contains(Features::TEXTURE_COMPRESSION_ASTC_HDR) {
+            supported_compressed_formats |= Self::ASTC_HDR;
         }
         if features.contains(Features::TEXTURE_COMPRESSION_BC) {
             supported_compressed_formats |= Self::BC;
@@ -1654,7 +1642,12 @@ impl CompressedImageFormats {
             | TextureFormat::EacR11Snorm
             | TextureFormat::EacRg11Unorm
             | TextureFormat::EacRg11Snorm => self.contains(CompressedImageFormats::ETC2),
-            TextureFormat::Astc { .. } => self.contains(CompressedImageFormats::ASTC_LDR),
+            TextureFormat::Astc { channel, .. } => match channel {
+                AstcChannel::Hdr => self.contains(CompressedImageFormats::ASTC_HDR),
+                AstcChannel::UnormSrgb | AstcChannel::Unorm => {
+                    self.contains(CompressedImageFormats::ASTC_LDR)
+                }
+            },
             _ => true,
         }
     }

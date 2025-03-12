@@ -15,14 +15,15 @@ bevy_reflect = ["dep:bevy_reflect", "bevy_math/bevy_reflect"]
 
 # Image formats
 avif = ["image/avif-native"]
-basis-universal = ["dep:basis-universal"]
+basis-universal = ["dep:basis-universal", "basis-universal/transcoding", "basis-universal/ktx2"]
+basis-universal-compressor = ["dep:basis-universal", "basis-universal/encoding"]
 bmp = ["image/bmp"]
 dds = ["ddsfile", "bevy_core_pipeline/dds"]
 exr = ["image/exr"]
 ff = ["image/ff"]
 gif = ["image/gif"]
 hdr = ["image/hdr"]
-ktx2 = ["dep:ktx2"]
+ktx2 = ["dep:ktx2", "basis-universal"]
 ico = ["image/ico"]
 jpeg = ["image/jpeg"]
 png = ["image/png"]
@@ -76,7 +77,7 @@ ktx2 = { version = "0.3.0", optional = true }
 flate2 = { version = "1.0.22", optional = true }
 ruzstd = { version = "0.7.0", optional = true }
 # For transcoding of UASTC/ETC1S universal formats, and for .basis file support
-basis-universal = { version = "0.3.0", optional = true }
+basis-universal = { version = "0.3.0", optional = true, default-features = false }
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 half = { version = "2.4.1" }
 
