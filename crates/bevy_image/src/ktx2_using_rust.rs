@@ -275,7 +275,7 @@ pub(crate) fn ktx2_buffer_to_image_using_rust(
                 },
             };
             levels = transcoded;
-            Ok(texture_format)
+            Ok::<TextureFormat, TextureError>(texture_format)
         }
         _ => Err(error.into()),
     })?;
