@@ -220,6 +220,10 @@ pub(crate) fn ktx2_buffer_to_image_using_rust(
                         TextureFormat::Rgba8Unorm
                     }
                 }
+                #[cfg(not(feature = "basis-universal"))]
+                Ktx2TranscodingHint::UastcLdr4x4 { .. }  => {
+                    return Err(TextureError::UnsupportedTextureFormat("UASTC texture decompression requires the 'basis-universal' feature".to_string()));
+                }
                 #[cfg(feature = "basis-universal")]
                 Ktx2TranscodingHint::UastcLdr4x4 { data_format, is_srgb }  => {
                     let (transcode_block_format, texture_format) =
