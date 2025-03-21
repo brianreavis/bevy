@@ -1,6 +1,6 @@
 [package]
 name = "bevy_dylib"
-version = "0.16.0-dev"
+version = "0.15.0"
 edition = "2024"
 description = "Force the Bevy Engine to be dynamically linked for faster linking"
 homepage = "https://bevyengine.org"
@@ -14,7 +14,7 @@ crate-type = ["dylib"]
 [dependencies]
 # feature std is needed to avoid an issue when linking critical_section
 # bevy_dylib is not expected to work in no_std
-bevy_internal = { path = "../bevy_internal", version = "0.16.0-dev", default-features = false, features = [
+bevy_internal = { path = "../bevy_internal", version = "0.15.0", default-features = false, features = [
   "std",
 ] }
 
