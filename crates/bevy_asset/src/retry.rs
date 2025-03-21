@@ -6,7 +6,7 @@ use bevy_app::{App, Plugin, PreUpdate};
 use bevy_ecs::{
     event::EventReader,
     resource::Resource,
-    schedule::IntoSystemConfigs,
+    schedule::IntoScheduleConfigs,
     system::{Res, ResMut},
 };
 use bevy_platform_support::collections::HashMap;
