@@ -956,7 +956,7 @@ impl Mesh {
             positions
                 .iter_mut()
                 .for_each(|pos| *pos = (Vec3::from_slice(pos) + translation).to_array());
-        } else if let Some(VertexAttributeValues::Float32x2(ref mut positions)) =
+        } else if let Some(VertexAttributeValues::Float32x2(positions)) =
             self.attribute_mut(Mesh::ATTRIBUTE_POSITION_2D)
         {
             // Apply translation to vertex positions
@@ -986,7 +986,7 @@ impl Mesh {
             positions
                 .iter_mut()
                 .for_each(|pos| *pos = (rotation * Vec3::from_slice(pos)).to_array());
-        } else if let Some(VertexAttributeValues::Float32x2(ref mut positions)) =
+        } else if let Some(VertexAttributeValues::Float32x2(positions)) =
             self.attribute_mut(Mesh::ATTRIBUTE_POSITION_2D)
         {
             // Apply rotation to vertex positions
@@ -1048,7 +1048,7 @@ impl Mesh {
             positions
                 .iter_mut()
                 .for_each(|pos| *pos = (scale * Vec3::from_slice(pos)).to_array());
-        } else if let Some(VertexAttributeValues::Float32x2(ref mut positions)) =
+        } else if let Some(VertexAttributeValues::Float32x2(positions)) =
             self.attribute_mut(Mesh::ATTRIBUTE_POSITION_2D)
         {
             // Apply scale to vertex positions
