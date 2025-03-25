@@ -122,13 +122,17 @@ pub trait MeshAabb {
 
 impl MeshAabb for Mesh {
     fn compute_aabb(&self) -> Option<Aabb> {
-        let Some(VertexAttributeValues::Float32x3(values)) =
+        if let Some(VertexAttributeValues::Float32x3(values)) =
             self.attribute(Mesh::ATTRIBUTE_POSITION)
-        else {
-            return None;
-        };
-
-        Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p)))
+        {
+            Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p)))
+        } else if let Some(VertexAttributeValues::Float32x2(values)) =
+            self.attribute(Mesh::ATTRIBUTE_POSITION_2D)
+        {
+            Aabb::enclosing(values.iter().map(|p| Vec3::new(p[0], p[1], 0.0)))
+        } else {
+            None
+        }
     }
 }
 
