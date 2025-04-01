@@ -18,7 +18,7 @@ use core::{future::Future, hash::Hash, mem, ops::Deref};
 use naga::valid::Capabilities;
 use std::sync::{Mutex, PoisonError};
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::{debug, error, info_span};
 #[cfg(feature = "shader_format_spirv")]
 use wgpu::util::make_spirv;
 use wgpu::{
@@ -728,10 +728,15 @@ impl PipelineCache {
         &self,
         descriptor: RenderPipelineDescriptor,
     ) -> CachedRenderPipelineId {
-        let mut new_pipelines = self
-            .new_pipelines
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let _label = descriptor.label.as_ref().map_or("", |v| v.as_ref());
+        let _ = info_span!("queue_render_pipeline", label = _label).entered();
+
+        let mut new_pipelines = {
+            let _ = info_span!("lock").entered();
+            self.new_pipelines
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+        };
         let id = CachedRenderPipelineId(self.pipelines.len() + new_pipelines.len());
         new_pipelines.push(CachedPipeline {
             descriptor: PipelineDescriptor::RenderPipelineDescriptor(Box::new(descriptor)),
@@ -757,10 +762,16 @@ impl PipelineCache {
         &self,
         descriptor: ComputePipelineDescriptor,
     ) -> CachedComputePipelineId {
-        let mut new_pipelines = self
-            .new_pipelines
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let _label = descriptor.label.as_ref().map_or("", |v| v.as_ref());
+        let _ = info_span!("queue_compute_pipeline", label = _label).entered();
+
+        let mut new_pipelines = {
+            let _ = info_span!("lock").entered();
+            self.new_pipelines
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+        };
+
         let id = CachedComputePipelineId(self.pipelines.len() + new_pipelines.len());
         new_pipelines.push(CachedPipeline {
             descriptor: PipelineDescriptor::ComputePipelineDescriptor(Box::new(descriptor)),
@@ -792,6 +803,8 @@ impl PipelineCache {
         id: CachedPipelineId,
         descriptor: RenderPipelineDescriptor,
     ) -> CachedPipelineState {
+        let _label = descriptor.label.as_ref().map_or("", |v| v.as_ref());
+        let _ = info_span!("start_create_render_pipeline", label = _label).entered();
         let device = self.device.clone();
         let shader_cache = self.shader_cache.clone();
         let layout_cache = self.layout_cache.clone();
@@ -903,6 +916,7 @@ impl PipelineCache {
         id: CachedPipelineId,
         descriptor: ComputePipelineDescriptor,
     ) -> CachedPipelineState {
+        let _ = info_span!("start_create_compute_pipeline").entered();
         let device = self.device.clone();
         let shader_cache = self.shader_cache.clone();
         let layout_cache = self.layout_cache.clone();
@@ -964,14 +978,18 @@ impl PipelineCache {
     ///
     /// [`RenderSet::Render`]: crate::RenderSet::Render
     pub fn process_queue(&mut self) {
+        let _ = info_span!("pipeline_cache_process_queue").entered();
+
         let mut waiting_pipelines = mem::take(&mut self.waiting_pipelines);
         let mut pipelines = mem::take(&mut self.pipelines);
 
         {
-            let mut new_pipelines = self
-                .new_pipelines
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+            let mut new_pipelines = {
+                let _ = info_span!("lock").entered();
+                self.new_pipelines
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+            };
             for new_pipeline in new_pipelines.drain(..) {
                 let id = pipelines.len();
                 pipelines.push(new_pipeline);
@@ -979,8 +997,11 @@ impl PipelineCache {
             }
         }
 
-        for id in waiting_pipelines {
-            self.process_pipeline(&mut pipelines[id], id);
+        {
+            let _ = info_span!("process_pipelines").entered();
+            for id in waiting_pipelines {
+                self.process_pipeline(&mut pipelines[id], id);
+            }
         }
 
         self.pipelines = pipelines;
