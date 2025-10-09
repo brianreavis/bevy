@@ -330,9 +330,18 @@ impl Mesh {
     pub const ATTRIBUTE_JOINT_INDEX: MeshVertexAttribute =
         MeshVertexAttribute::new("Vertex_JointIndex", 7, VertexFormat::Uint16x4);
 
+    /// Where the vertex is located in 2D space. Use in conjunction with [`Mesh::insert_attribute`]
+    /// or [`Mesh::with_inserted_attribute`].
+    ///
+    /// *This attribute should only be used on meshes intended for rendering with 2D cameras (in lieu of `ATTRIBUTE_POSITION`).*
+    ///
+    /// The format of this attribute is [`VertexFormat::Float32x2`].
+    pub const ATTRIBUTE_POSITION_2D: MeshVertexAttribute =
+        MeshVertexAttribute::new("Vertex_Position_2d", 8, VertexFormat::Float32x2);
+
     /// The first index that can be used for custom vertex attributes.
     /// Only the attributes with an index below this are used by Bevy.
-    pub const FIRST_AVAILABLE_CUSTOM_ATTRIBUTE: u64 = 8;
+    pub const FIRST_AVAILABLE_CUSTOM_ATTRIBUTE: u64 = 9;
 
     /// Construct a new mesh. You need to provide a [`PrimitiveTopology`] so that the
     /// renderer knows how to treat the vertex data. Most of the time this will be
@@ -1847,6 +1856,14 @@ impl Mesh {
             positions
                 .iter_mut()
                 .for_each(|pos| *pos = (Vec3::from_slice(pos) + translation).to_array());
+        } else if let Some(VertexAttributeValues::Float32x2(positions)) =
+            self.attribute_mut(Mesh::ATTRIBUTE_POSITION_2D)
+        {
+            // Apply translation to vertex positions
+            let translation_2d = translation.xy();
+            positions
+                .iter_mut()
+                .for_each(|pos| *pos = (Vec2::from_slice(pos) + translation_2d).to_array());
         }
 
         Ok(())
@@ -1894,6 +1911,13 @@ impl Mesh {
             positions
                 .iter_mut()
                 .for_each(|pos| *pos = (rotation * Vec3::from_slice(pos)).to_array());
+        } else if let Some(VertexAttributeValues::Float32x2(positions)) =
+            self.attribute_mut(Mesh::ATTRIBUTE_POSITION_2D)
+        {
+            // Apply rotation to vertex positions
+            positions
+                .iter_mut()
+                .for_each(|pos| *pos = (rotation * Vec3::new(pos[0], pos[1], 0.0)).xy().to_array());
         }
 
         // No need to transform normals or tangents if rotation is near identity
@@ -1974,6 +1998,14 @@ impl Mesh {
             positions
                 .iter_mut()
                 .for_each(|pos| *pos = (scale * Vec3::from_slice(pos)).to_array());
+        } else if let Some(VertexAttributeValues::Float32x2(positions)) =
+            self.attribute_mut(Mesh::ATTRIBUTE_POSITION_2D)
+        {
+            // Apply scale to vertex positions
+            let scale_xy = scale.xy();
+            positions
+                .iter_mut()
+                .for_each(|pos| *pos = (scale_xy * Vec2::from_slice(pos)).to_array());
         }
 
         // No need to transform normals or tangents if scale is uniform

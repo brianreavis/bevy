@@ -23,13 +23,17 @@ impl MeshAabb for Mesh {
             return Some(aabb.into());
         }
 
-        let Ok(VertexAttributeValues::Float32x3(values)) =
+        if let Ok(VertexAttributeValues::Float32x3(values)) =
             self.try_attribute(Mesh::ATTRIBUTE_POSITION)
-        else {
-            return None;
-        };
-
-        Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p)))
+        {
+            Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p)))
+        } else if let Ok(VertexAttributeValues::Float32x2(values)) =
+            self.try_attribute(Mesh::ATTRIBUTE_POSITION_2D)
+        {
+            Aabb::enclosing(values.iter().map(|p| Vec3::new(p[0], p[1], 0.0)))
+        } else {
+            None
+        }
     }
 }
 
