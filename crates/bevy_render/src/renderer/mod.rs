@@ -100,7 +100,30 @@ pub fn render_present(world: &mut World, state: &mut SystemState<Query<Entity, W
                 // though `present()` doesn't present the frame, it schedules it to be presented
                 // by wgpu.
                 // https://docs.rs/winit/0.29.9/wasm32-unknown-unknown/winit/window/struct.Window.html#method.pre_present_notify
+
+                #[cfg(not(target_vendor = "apple"))]
                 surface_texture.present();
+                #[cfg(target_vendor = "apple")]
+                {
+                    // If presenting with a CATransaction, we need to present on the same thread as the
+                    // transaction (which is almost always the main thread). We need to block (exec_sync),
+                    // otherwise we run the risk wgpu panicking on the next frame.
+                    //
+                    // From the wgpu docs:
+                    // "If a SurfaceTexture referencing this surface is alive when the swapchain is
+                    // recreated, recreating the swapchain will panic."
+                    //
+                    // TODO: Make async and block before get_current_texture
+                    if window.metal_surface_presents_with_transaction
+                        && !objc2_foundation::NSThread::currentThread().isMainThread()
+                    {
+                        dispatch2::DispatchQueue::main().exec_sync(move || {
+                            surface_texture.present();
+                        });
+                    } else {
+                        surface_texture.present();
+                    }
+                }
             }
         }
 

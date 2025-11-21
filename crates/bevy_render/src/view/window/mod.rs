@@ -63,6 +63,8 @@ pub struct ExtractedWindow {
     pub size_changed: bool,
     pub present_mode_changed: bool,
     pub alpha_mode: CompositeAlphaMode,
+    /// https://developer.apple.com/documentation/quartzcore/cametallayer/presentswithtransaction?language=objc
+    pub metal_surface_presents_with_transaction: bool,
 }
 
 impl ExtractedWindow {
@@ -141,6 +143,7 @@ fn extract_windows(
             swap_chain_texture_format: None,
             present_mode_changed: false,
             alpha_mode: window.composite_alpha_mode,
+            metal_surface_presents_with_transaction: window.metal_surface_presents_with_transaction,
         });
 
         // NOTE: Drop the swap chain frame here
@@ -314,6 +317,27 @@ fn create_window_surface(
     let surface = window
         .surface_target_source
         .create_surface(render_instance, is_main_thread)?;
+
+    #[cfg(target_vendor = "apple")]
+    if window.metal_surface_presents_with_transaction {
+        unsafe {
+            if let Some(surface_ref) = surface.as_hal::<wgpu::hal::metal::Api>() {
+                // SAFETY: The wgpu API only provides immutable access, but the underlying Metal
+                // surface needs this flag set. This cast is sketchy, but not dangerous.
+                //
+                // See https://github.com/gfx-rs/wgpu/issues/2711#issuecomment-1145198653
+                let surface_ptr = surface_ref.deref() as *const wgpu::hal::metal::Surface;
+                let surface_mut_ptr = surface_ptr as *mut wgpu::hal::metal::Surface;
+                let current_value = (*surface_mut_ptr).present_with_transaction;
+                if current_value == false {
+                    tracing::info!(
+                        "Set present_with_transaction on Metal surface: {surface_mut_ptr:p}"
+                    );
+                    (*surface_mut_ptr).present_with_transaction = true;
+                }
+            }
+        }
+    }
 
     let caps = surface.get_capabilities(render_adapter);
     let formats = caps.formats;
