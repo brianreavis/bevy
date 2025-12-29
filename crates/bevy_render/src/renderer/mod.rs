@@ -30,10 +30,7 @@ use wgpu::{
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
-pub fn render_system(
-    world: &mut World,
-    state: &mut SystemState<Query<(&ViewTarget, &ExtractedCamera)>>,
-) {
+pub fn render_system(world: &mut World) {
     world.resource_scope(|world, mut graph: Mut<RenderGraph>| {
         graph.update(world);
     });
@@ -57,10 +54,12 @@ pub fn render_system(
     );
 
     match res {
-        Ok(Some(diagnostics_recorder)) => {
-            world.insert_resource(diagnostics_recorder);
+        Ok((output, diagnostics_recorder)) => {
+            world.insert_resource(output);
+            if let Some(diagnostics_recorder) = diagnostics_recorder {
+                world.insert_resource(diagnostics_recorder);
+            }
         }
-        Ok(None) => {}
         Err(e) => {
             error!("Error running render graph:");
             {
@@ -77,7 +76,18 @@ pub fn render_system(
             panic!("Error running render graph: {e}");
         }
     }
+}
 
+/// This runs after [`render_system`] and it handles presenting the rendered frame.
+///
+/// This is set up as a distinct system so that third-party developers can run systems between rendering and presentation.
+/// For example, for an iOS app, one might run [`render_system`], poll for completion of [`RenderGraphRunnerOutput::submission_index`],
+/// start a CATransaction, emit camera changes to Swift, [`render_present`], then commit the CATransaction in order to position
+/// SwiftUI views on top of world content without jitter.
+pub fn render_present(
+    world: &mut World,
+    state: &mut SystemState<Query<(&ViewTarget, &ExtractedCamera)>>,
+) {
     {
         let _span = info_span!("present_frames").entered();
 

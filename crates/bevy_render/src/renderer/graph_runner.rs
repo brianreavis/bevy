@@ -1,4 +1,4 @@
-use bevy_ecs::{prelude::Entity, world::World};
+use bevy_ecs::{prelude::Entity, resource::Resource, world::World};
 use bevy_platform::collections::HashMap;
 #[cfg(feature = "trace")]
 use tracing::info_span;
@@ -62,6 +62,11 @@ pub enum RenderGraphRunnerError {
     },
 }
 
+#[derive(Resource)]
+pub struct RenderGraphRunnerOutput {
+    pub submission_index: wgpu::SubmissionIndex,
+}
+
 impl RenderGraphRunner {
     pub fn run(
         graph: &RenderGraph,
@@ -70,7 +75,8 @@ impl RenderGraphRunner {
         queue: &wgpu::Queue,
         world: &World,
         finalizer: impl FnOnce(&mut wgpu::CommandEncoder),
-    ) -> Result<Option<DiagnosticsRecorder>, RenderGraphRunnerError> {
+    ) -> Result<(RenderGraphRunnerOutput, Option<DiagnosticsRecorder>), RenderGraphRunnerError>
+    {
         if let Some(recorder) = &mut diagnostics_recorder {
             recorder.begin_frame();
         }
@@ -79,14 +85,14 @@ impl RenderGraphRunner {
         Self::run_graph(graph, None, &mut render_context, world, &[], None, None)?;
         finalizer(render_context.command_encoder());
 
-        let (render_device, mut diagnostics_recorder) = {
+        let (render_device, mut diagnostics_recorder, submission_index) = {
             let (commands, render_device, diagnostics_recorder) = render_context.finish();
 
             #[cfg(feature = "trace")]
             let _span = info_span!("submit_graph_commands").entered();
-            queue.submit(commands);
+            let submission_index = queue.submit(commands);
 
-            (render_device, diagnostics_recorder)
+            (render_device, diagnostics_recorder, submission_index)
         };
 
         if let Some(recorder) = &mut diagnostics_recorder {
@@ -96,7 +102,8 @@ impl RenderGraphRunner {
             });
         }
 
-        Ok(diagnostics_recorder)
+        let output = RenderGraphRunnerOutput { submission_index };
+        Ok((output, diagnostics_recorder))
     }
 
     /// Runs the [`RenderGraph`] and all its sub-graphs sequentially, making sure that all nodes are
