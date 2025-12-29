@@ -463,6 +463,26 @@ pub struct Window {
     ///
     /// [`WindowAttributesExtIOS::with_preferred_screen_edges_deferring_system_gestures`]: https://docs.rs/winit/latest/x86_64-apple-darwin/winit/platform/ios/trait.WindowAttributesExtIOS.html#tymethod.with_preferred_screen_edges_deferring_system_gestures
     pub preferred_screen_edges_deferring_system_gestures: ScreenEdge,
+    /// _This flag should not be set except for advanced use cases._
+    ///
+    /// Set to `true` if each frame will be presented within a [CATransaction](https://developer.apple.com/documentation/quartzcore/catransaction?language=objc).
+    /// Bevy does not begin or commit a transaction; one must configure this on their own. Setting this flag only ensures frame presentation will be executed as
+    /// part of the active transaction.
+    ///
+    /// https://developer.apple.com/documentation/quartzcore/cametallayer/presentswithtransaction?language=objc
+    ///
+    /// ## Usage example
+    ///
+    /// For an iOS app with Bevy attached to a CAMetalLayer, one might run [`render_system`], poll for completion of [`RenderGraphRunnerOutput::submission_index`],
+    /// start a CATransaction, emit camera changes to Swift, [`render_present`], then commit the CATransaction in order to position
+    /// SwiftUI views on top of world content without jitter.
+    ///
+    /// CATransaction operations are expected to be performed on the main thread.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - Only used on iOS and macOS.
+    pub metal_surface_presents_with_transaction: bool,
 }
 
 impl Default for Window {
@@ -507,6 +527,7 @@ impl Default for Window {
             prefers_home_indicator_hidden: false,
             prefers_status_bar_hidden: false,
             preferred_screen_edges_deferring_system_gestures: Default::default(),
+            metal_surface_presents_with_transaction: false,
         }
     }
 }

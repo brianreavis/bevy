@@ -69,6 +69,8 @@ pub struct ExtractedWindow {
     /// On Wayland, windows must present at least once before they are shown.
     /// See <https://wayland.app/protocols/xdg-shell#xdg_surface>
     pub needs_initial_present: bool,
+    /// https://developer.apple.com/documentation/quartzcore/cametallayer/presentswithtransaction?language=objc
+    pub metal_surface_presents_with_transaction: bool,
 }
 
 impl ExtractedWindow {
@@ -94,7 +96,29 @@ impl ExtractedWindow {
             // though `present()` doesn't present the frame, it schedules it to be presented
             // by wgpu.
             // https://docs.rs/winit/0.29.9/wasm32-unknown-unknown/winit/window/struct.Window.html#method.pre_present_notify
+            #[cfg(not(target_vendor = "apple"))]
             surface_texture.present();
+            #[cfg(target_vendor = "apple")]
+            {
+                // If presenting with a CATransaction, we need to present on the same thread as the
+                // transaction (which is almost always the main thread). We need to block (exec_sync),
+                // otherwise we run the risk wgpu panicking on the next frame.
+                //
+                // From the wgpu docs:
+                // "If a SurfaceTexture referencing this surface is alive when the swapchain is
+                // recreated, recreating the swapchain will panic."
+                //
+                // TODO: Make async and block before get_current_texture
+                if self.metal_surface_presents_with_transaction
+                    && !objc2_foundation::NSThread::currentThread().isMainThread()
+                {
+                    dispatch2::DispatchQueue::main().exec_sync(move || {
+                        surface_texture.present();
+                    });
+                } else {
+                    surface_texture.present();
+                }
+            }
         }
     }
 }
@@ -164,6 +188,7 @@ fn extract_windows(
             present_mode_changed: false,
             alpha_mode: window.composite_alpha_mode,
             needs_initial_present: true,
+            metal_surface_presents_with_transaction: window.metal_surface_presents_with_transaction,
         });
 
         if extracted_window.swap_chain_texture.is_none() {
@@ -348,6 +373,27 @@ fn create_window_surface(
     let surface = window
         .surface_target_source
         .create_surface(render_instance, is_main_thread)?;
+
+    #[cfg(target_vendor = "apple")]
+    if window.metal_surface_presents_with_transaction {
+        unsafe {
+            if let Some(surface_ref) = surface.as_hal::<wgpu::hal::metal::Api>() {
+                // SAFETY: The wgpu API only provides immutable access, but the underlying Metal
+                // surface needs this flag set. This cast is sketchy, but not dangerous.
+                //
+                // See https://github.com/gfx-rs/wgpu/issues/2711#issuecomment-1145198653
+                let surface_ptr = surface_ref.deref() as *const wgpu::hal::metal::Surface;
+                let surface_mut_ptr = surface_ptr as *mut wgpu::hal::metal::Surface;
+                let current_value = (*surface_mut_ptr).present_with_transaction;
+                if current_value == false {
+                    tracing::info!(
+                        "Set present_with_transaction on Metal surface: {surface_mut_ptr:p}"
+                    );
+                    (*surface_mut_ptr).present_with_transaction = true;
+                }
+            }
+        }
+    }
 
     let caps = surface.get_capabilities(render_adapter);
     let formats = caps.formats;
