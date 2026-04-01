@@ -200,6 +200,9 @@ impl ViewVisibility {
     /// An entity that cannot be seen from any views.
     pub const HIDDEN: Self = Self(0);
 
+    /// An entity that is visible in at least one view.
+    pub const VISIBLE: Self = Self(1);
+
     /// Returns `true` if the entity is visible in any view.
     /// Otherwise, returns `false`.
     #[inline]
