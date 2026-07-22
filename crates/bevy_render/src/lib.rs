@@ -302,7 +302,8 @@ impl Plugin for RenderPlugin {
 
         match &self.render_creation {
             RenderCreation::Manual(resources) => {
-                let future_render_resources_wrapper = Arc::new(Mutex::new(Some(resources.clone())));
+                let future_render_resources_wrapper =
+                    Arc::new(Mutex::new(Some((**resources).clone())));
                 app.insert_resource(FutureRenderResources(
                     future_render_resources_wrapper.clone(),
                 ));

@@ -193,7 +193,7 @@ pub fn prepare_material_meshlet_meshes_main_opaque_pass(
             let pipeline_descriptor = RenderPipelineDescriptor {
                 label: material_pipeline_descriptor.label,
                 layout,
-                push_constant_ranges: vec![],
+                immediate_size: 0,
                 vertex: VertexState {
                     shader: meshlet_pipelines.meshlet_mesh_material.clone(),
                     shader_defs: shader_defs.clone(),
@@ -203,8 +203,8 @@ pub fn prepare_material_meshlet_meshes_main_opaque_pass(
                 primitive: PrimitiveState::default(),
                 depth_stencil: Some(DepthStencilState {
                     format: TextureFormat::Depth16Unorm,
-                    depth_write_enabled: false,
-                    depth_compare: CompareFunction::Equal,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(CompareFunction::Equal),
                     stencil: StencilState::default(),
                     bias: DepthBiasState::default(),
                 }),
@@ -395,8 +395,8 @@ pub fn prepare_material_meshlet_meshes_prepass(
                 primitive: PrimitiveState::default(),
                 depth_stencil: Some(DepthStencilState {
                     format: TextureFormat::Depth16Unorm,
-                    depth_write_enabled: false,
-                    depth_compare: CompareFunction::Equal,
+                    depth_write_enabled: Some(false),
+                    depth_compare: Some(CompareFunction::Equal),
                     stencil: StencilState::default(),
                     bias: DepthBiasState::default(),
                 }),

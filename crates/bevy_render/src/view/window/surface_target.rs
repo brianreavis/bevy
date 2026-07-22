@@ -216,7 +216,7 @@ pub trait HasSurfaceTarget {
 
 impl<T> HasSurfaceTarget for T
 where
-    T: wgpu::WindowHandle,
+    T: wgpu::WindowHandle + HasDisplayHandle,
 {
     unsafe fn surface_target(&self) -> Option<SurfaceTargetWrapper<'_>> {
         Some(SurfaceTargetWrapper::SurfaceTarget(SurfaceTarget::from(
@@ -237,12 +237,12 @@ impl HasDisplayHandle for SurfaceTargetWrapper<'_> {
     fn display_handle(&self) -> Result<DisplayHandle<'_>, wgpu::rwh::HandleError> {
         match self {
             Self::SurfaceTarget(surface_target) => match &surface_target {
-                SurfaceTarget::Window(window) => window.display_handle(),
+                SurfaceTarget::DisplayAndWindow(window) => window.display_handle(),
                 _ => Err(wgpu::rwh::HandleError::NotSupported),
             },
             Self::SurfaceTargetUnsafe(surface_target_unsafe) => match surface_target_unsafe {
                 SurfaceTargetUnsafe::RawHandle {
-                    raw_display_handle,
+                    raw_display_handle: Some(raw_display_handle),
                     raw_window_handle: _,
                 } => {
                     // SAFETY: This is expected to be a valid handle for the lifetime of 'a
@@ -258,6 +258,7 @@ impl HasWindowHandle for SurfaceTargetWrapper<'_> {
     fn window_handle(&self) -> Result<WindowHandle<'_>, wgpu::rwh::HandleError> {
         match self {
             Self::SurfaceTarget(surface_target) => match &surface_target {
+                SurfaceTarget::DisplayAndWindow(window) => window.window_handle(),
                 SurfaceTarget::Window(window) => window.window_handle(),
                 _ => Err(wgpu::rwh::HandleError::NotSupported),
             },

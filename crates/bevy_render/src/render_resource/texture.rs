@@ -1,4 +1,4 @@
-use crate::renderer::WgpuWrapper;
+use crate::renderer::{RenderQueue, WgpuWrapper};
 use bevy_derive::{Deref, DerefMut};
 use bevy_ecs::resource::Resource;
 use bevy_utils::define_atomic_id;
@@ -70,8 +70,8 @@ pub struct SurfaceTexture {
 }
 
 impl SurfaceTexture {
-    pub fn present(self) {
-        self.value.into_inner().present();
+    pub fn present(self, render_queue: &RenderQueue) {
+        render_queue.present(self.value.into_inner());
     }
 }
 

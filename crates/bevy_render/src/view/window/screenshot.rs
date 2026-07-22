@@ -613,6 +613,7 @@ fn render_screenshot(
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &prepared_state.bind_group, &[]);
@@ -650,7 +651,7 @@ pub(crate) fn collect_screenshots(world: &mut World) {
                 tx.try_send(()).unwrap();
             });
             rx.recv().await.unwrap();
-            let data = buffer_slice.get_mapped_range();
+            let data = buffer_slice.get_mapped_range().unwrap();
             // we immediately move the data to CPU memory to avoid holding the mapped view for long
             let mut result = Vec::from(&*data);
             drop(data);

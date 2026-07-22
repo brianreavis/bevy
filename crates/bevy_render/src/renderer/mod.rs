@@ -25,8 +25,8 @@ use bevy_render::camera::ExtractedCamera;
 use bevy_time::TimeSender;
 use tracing::{debug, error, info, info_span, warn};
 use wgpu::{
-    Adapter, AdapterInfo, Backends, CommandBuffer, CommandEncoder, DeviceType, Instance, Queue,
-    RequestAdapterOptions, Trace,
+    Adapter, AdapterInfo, Backends, CommandBuffer, CommandEncoder, DeviceType, ForceShaderModelToken,
+    Instance, Queue, RequestAdapterOptions, Trace,
 };
 
 /// Updates the [`RenderGraph`] with all of its nodes and then runs it to render the entire frame.
@@ -102,7 +102,7 @@ pub fn render_present(
                 });
 
                 if view_needs_present || window.needs_initial_present {
-                    window.present();
+                    window.present(world.resource::<RenderQueue>());
                     window.needs_initial_present = false;
                 }
             }
@@ -157,16 +157,17 @@ const GPU_NOT_FOUND_ERROR_MESSAGE: &str = if cfg!(target_os = "linux") {
 };
 
 #[cfg(not(target_family = "wasm"))]
-fn find_adapter_by_name(
+async fn find_adapter_by_name(
     instance: &Instance,
     options: &WgpuSettings,
     compatible_surface: Option<&wgpu::Surface<'_>>,
     adapter_name: &str,
 ) -> Option<Adapter> {
-    for adapter in
-        instance.enumerate_adapters(options.backends.expect(
+    for adapter in instance
+        .enumerate_adapters(options.backends.expect(
             "The `backends` field of `WgpuSettings` must be set to use a specific adapter.",
         ))
+        .await
     {
         tracing::trace!("Checking adapter: {:?}", adapter.get_info());
         let info = adapter.get_info();
@@ -200,28 +201,35 @@ pub async fn initialize_renderer(
         backends,
         flags: options.instance_flags,
         memory_budget_thresholds: options.instance_memory_budget_thresholds,
+        display: None,
         backend_options: wgpu::BackendOptions {
             gl: wgpu::GlBackendOptions {
                 gles_minor_version: options.gles3_minor_version,
                 fence_behavior: wgpu::GlFenceBehavior::Normal,
+                debug_fns: wgpu::GlDebugFns::Auto,
             },
             dx12: wgpu::Dx12BackendOptions {
                 shader_compiler: options.dx12_shader_compiler.clone(),
                 presentation_system: wgpu::wgt::Dx12SwapchainKind::from_env().unwrap_or_default(),
                 latency_waitable_object: wgpu::wgt::Dx12UseFrameLatencyWaitableObject::from_env()
                     .unwrap_or_default(),
+                force_shader_model: ForceShaderModelToken::default(),
+                agility_sdk: None,
             },
-            noop: wgpu::NoopBackendOptions { enable: false },
+            noop: wgpu::NoopBackendOptions {
+                enable: false,
+                ..Default::default()
+            },
         },
     };
 
     #[cfg(not(feature = "raw_vulkan_init"))]
-    let instance = Instance::new(&instance_descriptor);
+    let instance = Instance::new(instance_descriptor);
     #[cfg(feature = "raw_vulkan_init")]
     let mut additional_vulkan_features = raw_vulkan_init::AdditionalVulkanFeatures::default();
     #[cfg(feature = "raw_vulkan_init")]
     let instance = raw_vulkan_init::create_raw_vulkan_instance(
-        &instance_descriptor,
+        instance_descriptor,
         &raw_vulkan_init_settings,
         &mut additional_vulkan_features,
     );
@@ -257,17 +265,21 @@ pub async fn initialize_renderer(
         power_preference: options.power_preference,
         compatible_surface: surface.as_ref(),
         force_fallback_adapter,
+        apply_limit_buckets: false,
     };
 
     #[cfg(not(target_family = "wasm"))]
-    let mut selected_adapter = desired_adapter_name.and_then(|adapter_name| {
+    let mut selected_adapter = if let Some(adapter_name) = desired_adapter_name {
         find_adapter_by_name(
             &instance,
             options,
             request_adapter_options.compatible_surface,
             &adapter_name,
         )
-    });
+        .await
+    } else {
+        None
+    };
     #[cfg(target_family = "wasm")]
     let mut selected_adapter = None;
 
@@ -386,18 +398,18 @@ pub async fn initialize_renderer(
             max_vertex_buffer_array_stride: limits
                 .max_vertex_buffer_array_stride
                 .min(constrained_limits.max_vertex_buffer_array_stride),
-            max_push_constant_size: limits
-                .max_push_constant_size
-                .min(constrained_limits.max_push_constant_size),
+            max_immediate_size: limits
+                .max_immediate_size
+                .min(constrained_limits.max_immediate_size),
             min_uniform_buffer_offset_alignment: limits
                 .min_uniform_buffer_offset_alignment
                 .max(constrained_limits.min_uniform_buffer_offset_alignment),
             min_storage_buffer_offset_alignment: limits
                 .min_storage_buffer_offset_alignment
                 .max(constrained_limits.min_storage_buffer_offset_alignment),
-            max_inter_stage_shader_components: limits
-                .max_inter_stage_shader_components
-                .min(constrained_limits.max_inter_stage_shader_components),
+            max_inter_stage_shader_variables: limits
+                .max_inter_stage_shader_variables
+                .min(constrained_limits.max_inter_stage_shader_variables),
             max_compute_workgroup_storage_size: limits
                 .max_compute_workgroup_storage_size
                 .min(constrained_limits.max_compute_workgroup_storage_size),
@@ -440,27 +452,69 @@ pub async fn initialize_renderer(
             max_color_attachment_bytes_per_sample: limits
                 .max_color_attachment_bytes_per_sample
                 .min(constrained_limits.max_color_attachment_bytes_per_sample),
-            min_subgroup_size: limits
-                .min_subgroup_size
-                .max(constrained_limits.min_subgroup_size),
-            max_subgroup_size: limits
-                .max_subgroup_size
-                .min(constrained_limits.max_subgroup_size),
-            max_acceleration_structures_per_shader_stage: limits
-                .max_acceleration_structures_per_shader_stage
-                .min(constrained_limits.max_acceleration_structures_per_shader_stage),
+            max_bind_groups_plus_vertex_buffers: limits
+                .max_bind_groups_plus_vertex_buffers
+                .min(constrained_limits.max_bind_groups_plus_vertex_buffers),
+            max_buffers_and_acceleration_structures_per_shader_stage: limits
+                .max_buffers_and_acceleration_structures_per_shader_stage
+                .min(constrained_limits.max_buffers_and_acceleration_structures_per_shader_stage),
+            max_ray_dispatch_count: limits
+                .max_ray_dispatch_count
+                .min(constrained_limits.max_ray_dispatch_count),
+            max_ray_recursion_depth: limits
+                .max_ray_recursion_depth
+                .min(constrained_limits.max_ray_recursion_depth),
             max_task_workgroup_total_count: limits
                 .max_task_workgroup_total_count
                 .min(constrained_limits.max_task_workgroup_total_count),
             max_task_workgroups_per_dimension: limits
                 .max_task_workgroups_per_dimension
                 .min(constrained_limits.max_task_workgroups_per_dimension),
+            max_mesh_workgroup_total_count: limits
+                .max_mesh_workgroup_total_count
+                .min(constrained_limits.max_mesh_workgroup_total_count),
+            max_mesh_workgroups_per_dimension: limits
+                .max_mesh_workgroups_per_dimension
+                .min(constrained_limits.max_mesh_workgroups_per_dimension),
+            max_task_invocations_per_workgroup: limits
+                .max_task_invocations_per_workgroup
+                .min(constrained_limits.max_task_invocations_per_workgroup),
+            max_task_invocations_per_dimension: limits
+                .max_task_invocations_per_dimension
+                .min(constrained_limits.max_task_invocations_per_dimension),
+            max_mesh_invocations_per_workgroup: limits
+                .max_mesh_invocations_per_workgroup
+                .min(constrained_limits.max_mesh_invocations_per_workgroup),
+            max_mesh_invocations_per_dimension: limits
+                .max_mesh_invocations_per_dimension
+                .min(constrained_limits.max_mesh_invocations_per_dimension),
+            max_task_payload_size: limits
+                .max_task_payload_size
+                .min(constrained_limits.max_task_payload_size),
+            max_mesh_output_vertices: limits
+                .max_mesh_output_vertices
+                .min(constrained_limits.max_mesh_output_vertices),
+            max_mesh_output_primitives: limits
+                .max_mesh_output_primitives
+                .min(constrained_limits.max_mesh_output_primitives),
             max_mesh_output_layers: limits
                 .max_mesh_output_layers
                 .min(constrained_limits.max_mesh_output_layers),
-            max_mesh_multiview_count: limits
-                .max_mesh_multiview_count
-                .min(constrained_limits.max_mesh_multiview_count),
+            max_mesh_multiview_view_count: limits
+                .max_mesh_multiview_view_count
+                .min(constrained_limits.max_mesh_multiview_view_count),
+            max_acceleration_structures_per_shader_stage: limits
+                .max_acceleration_structures_per_shader_stage
+                .min(constrained_limits.max_acceleration_structures_per_shader_stage),
+            max_multiview_view_count: limits
+                .max_multiview_view_count
+                .min(constrained_limits.max_multiview_view_count),
+            max_binding_array_acceleration_structure_elements_per_shader_stage: limits
+                .max_binding_array_acceleration_structure_elements_per_shader_stage
+                .min(
+                    constrained_limits
+                        .max_binding_array_acceleration_structure_elements_per_shader_stage,
+                ),
         };
     }
 

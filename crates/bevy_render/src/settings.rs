@@ -3,11 +3,11 @@ use crate::renderer::{
 };
 use alloc::borrow::Cow;
 
+use wgpu::MemoryBudgetThresholds;
 pub use wgpu::{
     Backends, Dx12Compiler, Features as WgpuFeatures, Gles3MinorVersion, InstanceFlags,
     Limits as WgpuLimits, MemoryHints, PowerPreference,
 };
-use wgpu::{DxcShaderModel, MemoryBudgetThresholds};
 
 /// Configures the priority used when automatically configuring the features/limits of `wgpu`.
 #[derive(Clone)]
@@ -113,7 +113,6 @@ impl Default for WgpuSettings {
                 if cfg!(target_os = "windows") && std::fs::metadata(dxc).is_ok() {
                     Dx12Compiler::DynamicDxc {
                         dxc_path: String::from(dxc),
-                        max_shader_model: DxcShaderModel::V6_7,
                     }
                 } else {
                     Dx12Compiler::Fxc
@@ -162,7 +161,7 @@ pub struct RenderResources(
 )]
 pub enum RenderCreation {
     /// Allows renderer resource initialization to happen outside of the rendering plugin.
-    Manual(RenderResources),
+    Manual(Box<RenderResources>),
     /// Lets the rendering plugin create resources itself.
     Automatic(WgpuSettings),
 }
@@ -193,7 +192,7 @@ impl RenderCreation {
 
 impl From<RenderResources> for RenderCreation {
     fn from(value: RenderResources) -> Self {
-        Self::Manual(value)
+        Self::Manual(Box::new(value))
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::{
     render_resource::{SurfaceTexture, TextureView},
-    renderer::{RenderAdapter, RenderDevice, RenderInstance},
+    renderer::{RenderAdapter, RenderDevice, RenderInstance, RenderQueue},
     Extract, ExtractSchedule, Render, RenderApp, RenderSystems,
 };
 use bevy_app::{App, Plugin};
@@ -90,14 +90,14 @@ impl ExtractedWindow {
         self.swap_chain_texture_view.is_some() && self.swap_chain_texture.is_some()
     }
 
-    pub fn present(&mut self) {
+    pub fn present(&mut self, queue: &RenderQueue) {
         if let Some(surface_texture) = self.swap_chain_texture.take() {
             // TODO(clean): winit docs recommends calling pre_present_notify before this.
             // though `present()` doesn't present the frame, it schedules it to be presented
             // by wgpu.
             // https://docs.rs/winit/0.29.9/wasm32-unknown-unknown/winit/window/struct.Window.html#method.pre_present_notify
             #[cfg(not(target_vendor = "apple"))]
-            surface_texture.present();
+            surface_texture.present(queue);
             #[cfg(target_vendor = "apple")]
             {
                 // If presenting with a CATransaction, we need to present on the same thread as the
@@ -113,10 +113,10 @@ impl ExtractedWindow {
                     && !objc2_foundation::NSThread::currentThread().isMainThread()
                 {
                     dispatch2::DispatchQueue::main().exec_sync(move || {
-                        surface_texture.present();
+                        surface_texture.present(queue);
                     });
                 } else {
-                    surface_texture.present();
+                    surface_texture.present(queue);
                 }
             }
         }
@@ -297,44 +297,54 @@ pub fn prepare_windows(
         // and https://github.com/gfx-rs/wgpu/issues/1218
         #[cfg(target_os = "linux")]
         let may_erroneously_timeout = || {
-            render_instance
-                .enumerate_adapters(wgpu::Backends::VULKAN)
-                .iter()
-                .any(|adapter| {
-                    let name = adapter.get_info().name;
-                    name.starts_with("Radeon")
-                        || name.starts_with("AMD")
-                        || name.starts_with("Intel")
-                })
+            bevy_tasks::IoTaskPool::get().scope(|scope| {
+                scope.spawn(async {
+                    render_instance
+                        .enumerate_adapters(wgpu::Backends::VULKAN)
+                        .await
+                        .iter()
+                        .any(|adapter| {
+                            let name = adapter.get_info().name;
+                            name.starts_with("Radeon")
+                                || name.starts_with("AMD")
+                                || name.starts_with("Intel")
+                        })
+                });
+            })[0]
         };
 
         let surface = &surface_data.surface;
         match surface.get_current_texture() {
-            Ok(frame) => {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                 window.set_swapchain_texture(frame);
             }
-            Err(wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Outdated => {
                 render_device.configure_surface(surface, &surface_data.configuration);
                 let frame = match surface.get_current_texture() {
-                    Ok(frame) => frame,
-                    Err(err) => {
+                    wgpu::CurrentSurfaceTexture::Success(frame)
+                    | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                    variant => {
                         // This is a common occurrence on X11 and Xwayland with NVIDIA drivers
                         // when opening and resizing the window.
-                        warn!("Couldn't get swap chain texture after configuring. Cause: '{err}'");
+                        warn!(
+                            "Couldn't get swap chain texture after configuring. Cause: '{variant:?}'"
+                        );
                         continue;
                     }
                 };
                 window.set_swapchain_texture(frame);
             }
             #[cfg(target_os = "linux")]
-            Err(wgpu::SurfaceError::Timeout) if may_erroneously_timeout() => {
+            wgpu::CurrentSurfaceTexture::Timeout if may_erroneously_timeout() => {
                 tracing::trace!(
                     "Couldn't get swap chain texture. This is probably a quirk \
                         of your Linux GPU driver, so it can be safely ignored."
                 );
             }
-            Err(err) => {
-                panic!("Couldn't get swap chain texture, operation unrecoverable: {err}");
+            wgpu::CurrentSurfaceTexture::Occluded => {}
+            other => {
+                panic!("Couldn't get swap chain texture, operation unrecoverable: {other:?}");
             }
         }
         window.swap_chain_texture_format = Some(surface_data.configuration.format);
@@ -378,18 +388,15 @@ fn create_window_surface(
     if window.metal_surface_presents_with_transaction {
         unsafe {
             if let Some(surface_ref) = surface.as_hal::<wgpu::hal::metal::Api>() {
-                // SAFETY: The wgpu API only provides immutable access, but the underlying Metal
-                // surface needs this flag set. This cast is sketchy, but not dangerous.
+                // The Metal surface derives `present_with_transaction` from its `CAMetalLayer`, so
+                // set it there. Presenting with a transaction lets us position SwiftUI/AppKit views
+                // on top of world content without jitter.
                 //
                 // See https://github.com/gfx-rs/wgpu/issues/2711#issuecomment-1145198653
-                let surface_ptr = surface_ref.deref() as *const wgpu::hal::metal::Surface;
-                let surface_mut_ptr = surface_ptr as *mut wgpu::hal::metal::Surface;
-                let current_value = (*surface_mut_ptr).present_with_transaction;
-                if current_value == false {
-                    tracing::info!(
-                        "Set present_with_transaction on Metal surface: {surface_mut_ptr:p}"
-                    );
-                    (*surface_mut_ptr).present_with_transaction = true;
+                let render_layer = surface_ref.render_layer().lock();
+                if !render_layer.presentsWithTransaction() {
+                    tracing::info!("Set presentsWithTransaction on Metal surface's CAMetalLayer");
+                    render_layer.setPresentsWithTransaction(true);
                 }
             }
         }
@@ -444,6 +451,7 @@ fn create_window_surface(
             Some(format) => vec![format],
             None => vec![],
         },
+        color_space: wgpu::SurfaceColorSpace::Auto,
     };
 
     render_device.configure_surface(&surface, &configuration);

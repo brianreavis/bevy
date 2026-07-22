@@ -24,7 +24,7 @@ use bytemuck::cast_slice;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::warn;
-use wgpu_types::{VertexAttribute, VertexFormat, VertexStepMode};
+use wgpu_types::{VertexAttribute, VertexFormat, VertexStepMode, WriteOnly};
 
 pub const INDEX_BUFFER_ASSET_INDEX: u64 = 0;
 pub const VERTEX_ATTRIBUTE_BUFFER_ID: u64 = 10;
@@ -940,7 +940,9 @@ impl Mesh {
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
     pub fn create_packed_vertex_buffer_data(&self) -> Vec<u8> {
         let mut attributes_interleaved_buffer = vec![0; self.get_vertex_buffer_size()];
-        self.write_packed_vertex_buffer_data(&mut attributes_interleaved_buffer);
+        self.write_packed_vertex_buffer_data(WriteOnly::from_mut(
+            &mut attributes_interleaved_buffer,
+        ));
         attributes_interleaved_buffer
     }
 
@@ -953,7 +955,7 @@ impl Mesh {
     ///
     /// # Panics
     /// Panics when the mesh data has already been extracted to `RenderWorld`.
-    pub fn write_packed_vertex_buffer_data(&self, slice: &mut [u8]) {
+    pub fn write_packed_vertex_buffer_data(&self, mut slice: WriteOnly<'_, [u8]>) {
         let mesh_attributes = self.attributes.as_ref().expect(MESH_EXTRACTED_ERROR);
 
         let vertex_size = self.get_vertex_size() as usize;
@@ -969,7 +971,9 @@ impl Mesh {
                 .enumerate()
             {
                 let offset = vertex_index * vertex_size + attribute_offset;
-                slice[offset..offset + attribute_size].copy_from_slice(attribute_bytes);
+                slice
+                    .slice(offset..offset + attribute_size)
+                    .copy_from_slice(attribute_bytes);
             }
 
             attribute_offset += attribute_size;

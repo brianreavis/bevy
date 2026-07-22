@@ -483,8 +483,8 @@ impl SpecializedRenderPipeline for SmaaEdgeDetectionPipeline {
             }),
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Stencil8,
-                depth_write_enabled: false,
-                depth_compare: CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(CompareFunction::Always),
                 stencil: StencilState {
                     front: stencil_face_state,
                     back: stencil_face_state,
@@ -540,8 +540,8 @@ impl SpecializedRenderPipeline for SmaaBlendingWeightCalculationPipeline {
             }),
             depth_stencil: Some(DepthStencilState {
                 format: TextureFormat::Stencil8,
-                depth_write_enabled: false,
-                depth_compare: CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(CompareFunction::Always),
                 stencil: StencilState {
                     front: stencil_face_state,
                     back: stencil_face_state,
@@ -944,6 +944,7 @@ fn perform_edge_detection(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     };
 
     // Run the actual render pass.
@@ -1003,6 +1004,7 @@ fn perform_blending_weight_calculation(
         }),
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     };
 
     // Run the actual render pass.
@@ -1056,6 +1058,7 @@ fn perform_neighborhood_blending(
         depth_stencil_attachment: None,
         timestamp_writes: None,
         occlusion_query_set: None,
+        multiview_mask: None,
     };
 
     let mut neighborhood_blending_render_pass = render_context

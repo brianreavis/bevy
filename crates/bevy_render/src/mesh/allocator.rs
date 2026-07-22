@@ -22,7 +22,7 @@ use bevy_utils::default;
 use offset_allocator::{Allocation, Allocator};
 use tracing::error;
 use wgpu::{
-    BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor, DownlevelFlags,
+    BufferDescriptor, BufferSize, BufferUsages, CommandEncoderDescriptor, DownlevelFlags, WriteOnly,
     COPY_BUFFER_ALIGNMENT,
 };
 
@@ -566,7 +566,7 @@ impl MeshAllocator {
         self.copy_element_data(
             mesh_id,
             index_data.len(),
-            |slice| slice.copy_from_slice(index_data),
+            |mut slice| slice.copy_from_slice(index_data),
             BufferUsages::INDEX,
             slab_id,
             render_device,
@@ -579,7 +579,7 @@ impl MeshAllocator {
         &mut self,
         mesh_id: &AssetId<Mesh>,
         len: usize,
-        fill_data: impl Fn(&mut [u8]),
+        fill_data: impl Fn(WriteOnly<[u8]>),
         buffer_usages: BufferUsages,
         slab_id: SlabId,
         render_device: &RenderDevice,
@@ -608,7 +608,7 @@ impl MeshAllocator {
                         allocated_range.allocation.offset as u64 * slot_size,
                         size,
                     ) {
-                        let slice = &mut buffer.as_mut()[..len];
+                        let slice = buffer.slice(..len);
                         fill_data(slice);
                     }
                 }
@@ -634,8 +634,8 @@ impl MeshAllocator {
                     mapped_at_creation: true,
                 });
                 {
-                    let slice = &mut buffer.slice(..).get_mapped_range_mut()[..len];
-                    fill_data(slice);
+                    let mut slice = buffer.slice(..).get_mapped_range_mut().unwrap();
+                    fill_data(slice.slice(..len));
                 }
                 buffer.unmap();
                 large_object_slab.buffer = Some(buffer);
