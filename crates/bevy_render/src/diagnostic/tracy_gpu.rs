@@ -30,6 +30,18 @@ pub fn new_tracy_gpu_context(
 
 // Code copied from https://github.com/Wumpf/wgpu-profiler/blob/f9de342a62cb75f50904a98d11dd2bbeb40ceab8/src/tracy.rs
 fn initial_timestamp(device: &RenderDevice, queue: &RenderQueue) -> i64 {
+    // Calibration writes a timestamp directly on a command encoder, which
+    // is its own wgpu feature — pass-level timestamps do not imply it.
+    // Apple GPUs sample counters only at render-stage boundaries, so the
+    // feature is unavailable there and the write would be a fatal
+    // validation error. Report an uncalibrated start instead: Tracy GPU
+    // spans still function, offset rather than aligned to CPU time.
+    if !device
+        .features()
+        .contains(wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS)
+    {
+        return 0;
+    }
     let query_set = device.wgpu_device().create_query_set(&QuerySetDescriptor {
         label: None,
         ty: QueryType::Timestamp,
