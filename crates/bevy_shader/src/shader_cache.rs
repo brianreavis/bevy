@@ -268,12 +268,21 @@ impl<ShaderModule, RenderDevice> ShaderCache<ShaderModule, RenderDevice> {
                             })
                             .collect::<std::collections::HashMap<_, _>>();
 
-                        let naga = self.composer.make_naga_module(
+                        let mut naga = self.composer.make_naga_module(
                             naga_oil::compose::NagaModuleDescriptor {
                                 shader_defs,
                                 ..shader.into()
                             },
                         )?;
+
+                        // naga_oil includes imported modules wholesale, so
+                        // the composed module carries every function/type/
+                        // constant of the transitive import graph — most of
+                        // it unreachable from this pipeline's entry points.
+                        // Compacting strips the dead items so the backend
+                        // only emits (and the driver only compiles) what
+                        // the entry points actually reach.
+                        naga::compact::compact(&mut naga, naga::compact::KeepUnused::No);
 
                         #[cfg(not(feature = "decoupled_naga"))]
                         {
