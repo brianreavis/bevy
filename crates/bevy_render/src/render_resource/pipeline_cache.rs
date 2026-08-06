@@ -258,6 +258,16 @@ pub struct PipelineCache {
     /// If `true`, disables asynchronous pipeline compilation.
     /// This has no effect on macOS, wasm, or without the `multi_threaded` feature.
     synchronous_pipeline_compilation: bool,
+    /// While `true`, overrides `synchronous_pipeline_compilation` and forces
+    /// queued pipelines to compile asynchronously (in parallel across the
+    /// task pool). Intended for burst windows where per-frame stalls are
+    /// hidden (e.g. behind a loading screen); draws that need a
+    /// still-compiling pipeline are skipped by render phases as usual.
+    force_asynchronous_compilation: core::sync::atomic::AtomicBool,
+    /// offline-precompiled shader table (see
+    /// `precompiled_shaders`). Installed by the embedder after manifest
+    /// validation; `None` means every stage compiles at runtime as usual.
+    precompiled_shaders: Option<Arc<PrecompiledShaders>>,
 }
 
 impl PipelineCache {
@@ -269,6 +279,24 @@ impl PipelineCache {
     /// Returns a iterator of the IDs of all currently waiting pipelines.
     pub fn waiting_pipelines(&self) -> impl Iterator<Item = CachedPipelineId> + '_ {
         self.waiting_pipelines.iter().copied()
+    }
+
+    /// install the offline-precompiled shader table. Call after
+    /// validating the manifest against the device (limits, feature support);
+    /// stages found in the table skip runtime shader compilation entirely.
+    pub fn set_precompiled_shaders(
+        &mut self,
+        table: Arc<PrecompiledShaders>,
+    ) {
+        self.precompiled_shaders = Some(table);
+    }
+
+    /// the installed precompiled-shader table, if any (for
+    /// hit-rate diagnostics).
+    pub fn precompiled_shaders(
+        &self,
+    ) -> Option<&Arc<PrecompiledShaders>> {
+        self.precompiled_shaders.as_ref()
     }
 
     /// Create a new pipeline cache associated with the given render device.
@@ -308,7 +336,23 @@ impl PipelineCache {
             pipelines: default(),
             global_shader_defs,
             synchronous_pipeline_compilation,
+            force_asynchronous_compilation: core::sync::atomic::AtomicBool::new(false),
+            precompiled_shaders: None,
         }
+    }
+
+    /// See [`Self::force_asynchronous_compilation`]. Takes `&self` so burst
+    /// windows can be toggled from systems without exclusive cache access.
+    pub fn set_force_asynchronous_compilation(&self, force: bool) {
+        self.force_asynchronous_compilation
+            .store(force, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn effective_synchronous_compilation(&self) -> bool {
+        self.synchronous_pipeline_compilation
+            && !self
+                .force_asynchronous_compilation
+                .load(core::sync::atomic::Ordering::Relaxed)
     }
 
     /// Get the state of a cached render pipeline.
@@ -515,6 +559,13 @@ impl PipelineCache {
         id: CachedPipelineId,
         descriptor: RenderPipelineDescriptor,
     ) -> CachedPipelineState {
+        // build-time shader harvest — records per-stage keys
+        // and tags the pipeline label so the vendored wgpu-hal MSL dump
+        // can be joined back to the keys. No-op unless
+        // BEVY_SHADER_HARVEST_DIR is set.
+        let mut descriptor = descriptor;
+        maybe_harvest_render(id, &mut descriptor);
+
         let device = self.device.clone();
         let shader_cache = self.shader_cache.clone();
         let layout_cache = self.layout_cache.clone();
@@ -530,24 +581,50 @@ impl PipelineCache {
             .collect::<Vec<_>>();
         drop(bindgroup_layout_cache);
 
+        let precompiled_shaders = self.precompiled_shaders.clone();
         create_pipeline_task(
             async move {
+                // precompiled-metallib lookup. A hit serves the
+                // stage from an offline-compiled `MTLLibrary` (passthrough
+                // module; only `newFunctionWithName` happens at pipeline
+                // creation) and overrides the entry point to the mangled
+                // MSL name. A miss takes the unchanged runtime path below.
+                //
+                // Pipelines WITHOUT an explicit layout make wgpu derive an
+                // implicit one by reflecting the shader — impossible for a
+                // passthrough module (no naga interface), so those always
+                // use the runtime path.
+                let has_explicit_layout =
+                    !descriptor.layout.is_empty() || descriptor.immediate_size != 0;
+                let precompiled_vertex = precompiled_shaders
+                    .as_deref()
+                    .filter(|_| has_explicit_layout)
+                    .and_then(|table| table.lookup_render_vertex(&device, &descriptor));
+                let precompiled_fragment = precompiled_shaders
+                    .as_deref()
+                    .filter(|_| has_explicit_layout)
+                    .and_then(|table| table.lookup_render_fragment(&device, &descriptor));
+
                 let mut shader_cache = shader_cache.lock().unwrap();
                 let mut layout_cache = layout_cache.lock().unwrap();
 
-                let vertex_module = match shader_cache.get(
-                    &device,
-                    id,
-                    descriptor.vertex.shader.id(),
-                    &descriptor.vertex.shader_defs,
-                ) {
-                    Ok(module) => module,
-                    Err(err) => return Err(err),
+                let vertex_module = match &precompiled_vertex {
+                    Some(hit) => hit.module.clone(),
+                    None => match shader_cache.get(
+                        &device,
+                        id,
+                        descriptor.vertex.shader.id(),
+                        &descriptor.vertex.shader_defs,
+                    ) {
+                        Ok(module) => module,
+                        Err(err) => return Err(err),
+                    },
                 };
 
                 let fragment_module = match &descriptor.fragment {
-                    Some(fragment) => {
-                        match shader_cache.get(
+                    Some(fragment) => match &precompiled_fragment {
+                        Some(hit) => Some(hit.module.clone()),
+                        None => match shader_cache.get(
                             &device,
                             id,
                             fragment.shader.id(),
@@ -555,8 +632,8 @@ impl PipelineCache {
                         ) {
                             Ok(module) => Some(module),
                             Err(err) => return Err(err),
-                        }
-                    }
+                        },
+                    },
                     None => None,
                 };
 
@@ -584,7 +661,12 @@ impl PipelineCache {
                 let fragment_data = descriptor.fragment.as_ref().map(|fragment| {
                     (
                         fragment_module.unwrap(),
-                        fragment.entry_point.as_deref(),
+                        // passthrough modules resolve functions
+                        // by the literal (naga-mangled) MSL name.
+                        precompiled_fragment
+                            .as_ref()
+                            .map(|hit| hit.entry_point.as_str())
+                            .or(fragment.entry_point.as_deref()),
                         fragment.targets.as_slice(),
                     )
                 });
@@ -604,7 +686,11 @@ impl PipelineCache {
                     primitive: descriptor.primitive,
                     vertex: RawVertexState {
                         buffers: &vertex_buffer_layouts,
-                        entry_point: descriptor.vertex.entry_point.as_deref(),
+                        // see the fragment entry-point note.
+                        entry_point: precompiled_vertex
+                            .as_ref()
+                            .map(|hit| hit.entry_point.as_str())
+                            .or(descriptor.vertex.entry_point.as_deref()),
                         module: &vertex_module,
                         // TODO: Should this be the same as the fragment compilation options?
                         compilation_options: compilation_options.clone(),
@@ -625,7 +711,7 @@ impl PipelineCache {
                     device.create_render_pipeline(&descriptor),
                 ))
             },
-            self.synchronous_pipeline_compilation,
+            self.effective_synchronous_compilation(),
         )
     }
 
@@ -634,6 +720,11 @@ impl PipelineCache {
         id: CachedPipelineId,
         descriptor: ComputePipelineDescriptor,
     ) -> CachedPipelineState {
+        // build-time shader harvest — see
+        // `start_create_render_pipeline`.
+        let mut descriptor = descriptor;
+        maybe_harvest_compute(id, &mut descriptor);
+
         let device = self.device.clone();
         let shader_cache = self.shader_cache.clone();
         let layout_cache = self.layout_cache.clone();
@@ -649,19 +740,33 @@ impl PipelineCache {
             .collect::<Vec<_>>();
         drop(bindgroup_layout_cache);
 
+        let precompiled_shaders = self.precompiled_shaders.clone();
         create_pipeline_task(
             async move {
+                // precompiled-metallib lookup — see
+                // `start_create_render_pipeline` (including the
+                // implicit-layout restriction).
+                let has_explicit_layout =
+                    !descriptor.layout.is_empty() || descriptor.immediate_size != 0;
+                let precompiled_compute = precompiled_shaders
+                    .as_deref()
+                    .filter(|_| has_explicit_layout)
+                    .and_then(|table| table.lookup_compute(&device, &descriptor));
+
                 let mut shader_cache = shader_cache.lock().unwrap();
                 let mut layout_cache = layout_cache.lock().unwrap();
 
-                let compute_module = match shader_cache.get(
-                    &device,
-                    id,
-                    descriptor.shader.id(),
-                    &descriptor.shader_defs,
-                ) {
-                    Ok(module) => module,
-                    Err(err) => return Err(err),
+                let compute_module = match &precompiled_compute {
+                    Some(hit) => hit.module.clone(),
+                    None => match shader_cache.get(
+                        &device,
+                        id,
+                        descriptor.shader.id(),
+                        &descriptor.shader_defs,
+                    ) {
+                        Ok(module) => module,
+                        Err(err) => return Err(err),
+                    },
                 };
 
                 let layout = if descriptor.layout.is_empty() && descriptor.immediate_size == 0 {
@@ -676,7 +781,12 @@ impl PipelineCache {
                     label: descriptor.label.as_deref(),
                     layout: layout.as_ref().map(|layout| -> &PipelineLayout { layout }),
                     module: &compute_module,
-                    entry_point: descriptor.entry_point.as_deref(),
+                    // passthrough modules resolve functions by
+                    // the literal (naga-mangled) MSL name.
+                    entry_point: precompiled_compute
+                        .as_ref()
+                        .map(|hit| hit.entry_point.as_str())
+                        .or(descriptor.entry_point.as_deref()),
                     // TODO: Expose the rest of this somehow
                     compilation_options: PipelineCompilationOptions {
                         constants: &[],
@@ -690,7 +800,7 @@ impl PipelineCache {
                     device.create_compute_pipeline(&descriptor),
                 ))
             },
-            self.synchronous_pipeline_compilation,
+            self.effective_synchronous_compilation(),
         )
     }
 
