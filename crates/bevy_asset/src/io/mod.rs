@@ -5,7 +5,8 @@ compile_error!(
     when compiling to Wasm"
 );
 
-#[cfg(target_os = "android")]
+// Gated on `android_asset_reader`; see Cargo.toml.
+#[cfg(all(target_os = "android", feature = "android_asset_reader"))]
 pub mod android;
 pub mod embedded;
 #[cfg(not(target_arch = "wasm32"))]

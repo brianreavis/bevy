@@ -20,6 +20,10 @@ web_asset_cache = []
 asset_processor = []
 watch = []
 trace = []
+# Serve the default asset source from the APK's AAssetManager. Off by default
+# because it pulls in `android-activity`, which assumes it owns the process
+# entrypoint. Enable it for apps built as a NativeActivity.
+android_asset_reader = ["dep:bevy_android"]
 
 [dependencies]
 bevy_app = { path = "../bevy_app", version = "0.18.0-dev", default-features = false, features = [
@@ -70,7 +74,15 @@ uuid = { version = "1.13.1", default-features = false, features = [
 tracing = { version = "0.1", default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
-bevy_android = { path = "../bevy_android", version = "0.18.0-dev", default-features = false }
+# Optional, behind `android_asset_reader`. Upstream this is unconditional,
+# which forces `android-activity` into every Android build. That crate
+# `compile_error!`s unless `native-activity` or `game-activity` is selected,
+# and either emits an `ANativeActivity_onCreate` referencing an `android_main`
+# that only an entrypoint-owning app provides — so a library loaded via
+# System.loadLibrary fails to dlopen with:
+#
+#   UnsatisfiedLinkError: cannot locate symbol "android_main"
+bevy_android = { path = "../bevy_android", version = "0.18.0-dev", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # TODO: Assuming all wasm builds are for the browser. Require `no_std` support to break assumption.

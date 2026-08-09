@@ -16,7 +16,8 @@ pub use default_plugins::*;
 
 #[cfg(feature = "bevy_window")]
 pub use bevy_a11y as a11y;
-#[cfg(target_os = "android")]
+// Gated on the optional `bevy_android` dependency; see Cargo.toml.
+#[cfg(all(target_os = "android", feature = "bevy_android"))]
 pub use bevy_android as android;
 #[cfg(feature = "bevy_animation")]
 pub use bevy_animation as animation;

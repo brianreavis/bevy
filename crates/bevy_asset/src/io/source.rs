@@ -476,11 +476,16 @@ impl AssetSource {
         _path: String,
     ) -> impl FnMut() -> Box<dyn ErasedAssetReader> + Send + Sync {
         move || {
-            #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+            // The android arm is gated on `android_asset_reader`; without it,
+            // Android falls through to the ordinary file reader.
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                not(all(target_os = "android", feature = "android_asset_reader"))
+            ))]
             return Box::new(super::file::FileAssetReader::new(&_path));
             #[cfg(target_arch = "wasm32")]
             return Box::new(super::wasm::HttpWasmAssetReader::new(&_path));
-            #[cfg(target_os = "android")]
+            #[cfg(all(target_os = "android", feature = "android_asset_reader"))]
             return Box::new(super::android::AndroidAssetReader);
         }
     }
