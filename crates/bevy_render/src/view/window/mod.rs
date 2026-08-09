@@ -342,6 +342,15 @@ pub fn prepare_windows(
                         of your Linux GPU driver, so it can be safely ignored."
                 );
             }
+            // A swapchain acquire timeout is recoverable: wgpu documents it as
+            // "try again next frame", and the linux arm above already treats it
+            // that way. Panicking would kill the process over one slow frame,
+            // which happens under thermal throttling, memory pressure, or on a
+            // software rasterizer. Drop the frame instead.
+            #[cfg(target_os = "android")]
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                tracing::warn!("Swapchain acquire timed out; skipping this frame.");
+            }
             wgpu::CurrentSurfaceTexture::Occluded => {}
             other => {
                 panic!("Couldn't get swap chain texture, operation unrecoverable: {other:?}");
