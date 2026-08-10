@@ -284,6 +284,16 @@ pub fn prepare_windows(
         };
 
         // We didn't present the previous frame, so we can keep using our existing swapchain texture.
+        // Not on the web: WebGPU destroys the canvas texture at the end of
+        // each `requestAnimationFrame` task, so a texture held from an
+        // earlier frame is destroyed and any submit that references it
+        // fails validation. Drop it and acquire a fresh one below.
+        #[cfg(target_arch = "wasm32")]
+        {
+            drop(window.swap_chain_texture.take());
+            window.swap_chain_texture_view.take();
+        }
+        #[cfg(not(target_arch = "wasm32"))]
         if window.has_swapchain_texture() && !window.size_changed && !window.present_mode_changed {
             continue;
         }
@@ -314,7 +324,8 @@ pub fn prepare_windows(
         };
 
         let surface = &surface_data.surface;
-        match surface.get_current_texture() {
+        let acquired = surface.get_current_texture();
+        match acquired {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                 window.set_swapchain_texture(frame);

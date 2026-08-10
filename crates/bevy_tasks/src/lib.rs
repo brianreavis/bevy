@@ -18,13 +18,32 @@ pub mod cfg {
             async_executor
         }
 
-        #[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))] => {
+        #[cfg(any(
+            all(not(target_arch = "wasm32"), feature = "multi_threaded"),
+            all(target_arch = "wasm32", feature = "web_threads")
+        ))] => {
             /// Indicates multithreading support.
             multi_threaded
         }
 
-        #[cfg(target_arch = "wasm32")] => {
-            /// Indicates the current target requires additional `Send` bounds.
+        #[cfg(all(target_arch = "wasm32", feature = "web_threads"))] => {
+            /// Indicates threads on wasm are real Web Workers
+            /// (`web-thread-shim`).
+            /// Requires the `atomics` target-feature build and a
+            /// cross-origin-isolated page at runtime.
+            web_threads
+        }
+
+        #[cfg(all(target_arch = "wasm32", not(feature = "web_threads")))] => {
+            /// Indicates the single-threaded wasm environment (no
+            /// `web_threads`): tasks never leave the calling thread.
+            web_single
+        }
+
+        #[cfg(all(target_arch = "wasm32", not(feature = "web_threads")))] => {
+            /// Indicates the current target relaxes `Send` bounds (tasks
+            /// never leave the calling thread). With `web_threads`, tasks
+            /// migrate between real workers, so full `Send` is required.
             conditional_send
         }
 

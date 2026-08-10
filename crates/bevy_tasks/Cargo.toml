@@ -31,6 +31,12 @@ futures-lite = ["bevy_platform/std", "futures-lite/std"]
 # This is preferred if your application uses async-io.
 async-io = ["bevy_platform/std", "dep:async-io"]
 
+# Real task-pool threads on wasm, spawned as Web Workers by `web-thread-shim`.
+# Requires building with the `atomics` target-feature (nightly + build-std)
+# and a cross-origin-isolated page at runtime. When disabled, wasm keeps the
+# single-threaded pool.
+web_threads = ["multi_threaded", "dep:web-thread-shim"]
+
 [dependencies]
 bevy_platform = { path = "../bevy_platform", version = "0.18.0-dev", default-features = false, features = [
   "alloc",
@@ -56,6 +62,9 @@ crossbeam-queue = { version = "0.3", default-features = false, features = [
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 pin-project = "1"
 async-channel = { version = "2.3.0", default-features = false }
+# Worker-backed `std::thread`-style spawning for `web_threads`. Provided by
+# the parent workspace (the path resolves outside this repository).
+web-thread-shim = { path = "../../../web-thread-shim", optional = true }
 
 [target.'cfg(not(all(target_has_atomic = "8", target_has_atomic = "16", target_has_atomic = "32", target_has_atomic = "64", target_has_atomic = "ptr")))'.dependencies]
 async-task = { version = "4.4.0", default-features = false, features = [

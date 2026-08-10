@@ -101,6 +101,19 @@ pub fn render_present(
                     ) && view_target.needs_present()
                 });
 
+                // On the web, WebGPU destroys the canvas texture when the
+                // current `requestAnimationFrame` task ends, presented or
+                // not, and work submitted against a destroyed texture is
+                // discarded (the canvas displays black). So always present
+                // when a texture was acquired this frame. Skipping presents
+                // to save idle frames is native-only; on the web the host's
+                // rAF loop decides when frames happen.
+                #[cfg(target_arch = "wasm32")]
+                let view_needs_present = {
+                    let _ = view_needs_present;
+                    true
+                };
+
                 if view_needs_present || window.needs_initial_present {
                     window.present(world.resource::<RenderQueue>());
                     window.needs_initial_present = false;

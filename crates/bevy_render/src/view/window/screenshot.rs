@@ -691,6 +691,16 @@ pub(crate) fn collect_screenshots(world: &mut World) {
             }
         };
 
+        // With the `atomics` target-feature the task pool requires `Send`
+        // futures. This future is not: on the WebGPU backend, wgpu buffer
+        // handles wrap JS objects, which cannot leave the worker that
+        // created them. Screenshots are unsupported on that build.
+        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        {
+            let _ = finish;
+            error!("screenshots are unsupported on the wasm atomics build");
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
         AsyncComputeTaskPool::get().spawn(finish).detach();
     }
 }

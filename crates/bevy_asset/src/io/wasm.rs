@@ -52,7 +52,31 @@ fn js_value_to_err(context: &str) -> impl FnOnce(JsValue) -> std::io::Error + '_
 }
 
 impl HttpWasmAssetReader {
+    // With the `atomics` target-feature, task-pool threads are real Web
+    // Workers, so `AssetReader` futures must be `Send`. The fetch future
+    // below cannot be: it awaits the `fetch()` promise through `JsFuture`,
+    // and a `JsValue` is an index into the current worker's wasm-bindgen
+    // object table. Workers share no JS objects, so on another worker that
+    // index refers to nothing, and the promise only resolves on the event
+    // loop of the worker that called `fetch()`. `JsValue` is therefore
+    // `!Send`. Stub this reader out so the crate compiles; on this build
+    // asset loading needs a source whose futures are `Send` (for example
+    // one that forwards requests to a fixed thread over channels).
+    #[cfg(target_feature = "atomics")]
+    pub(crate) async fn fetch_bytes(
+        &self,
+        path: PathBuf,
+    ) -> Result<impl Reader + use<>, AssetReaderError> {
+        let _ = path;
+        let error = std::io::Error::other(
+            "HttpWasmAssetReader is unavailable on the atomics (web_threads) build: \
+             its JS fetch future is not Send. Use a Send-capable asset source.",
+        );
+        Err::<VecReader, _>(AssetReaderError::Io(error.into()))
+    }
+
     // Also used by [`WebAssetReader`](crate::web::WebAssetReader)
+    #[cfg(not(target_feature = "atomics"))]
     pub(crate) async fn fetch_bytes(
         &self,
         path: PathBuf,

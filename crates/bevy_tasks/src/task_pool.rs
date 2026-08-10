@@ -1,9 +1,18 @@
 use alloc::{boxed::Box, format, string::String, vec::Vec};
 use core::{future::Future, marker::PhantomData, mem, panic::AssertUnwindSafe};
-use std::{
-    thread::{self, JoinHandle},
-    thread_local,
-};
+use std::thread_local;
+
+crate::cfg::web_threads! {
+    if {
+        // With `web_threads`, pool threads are Web Workers spawned via
+        // `web-thread-shim`; `std::thread` still provides `current()` and
+        // `panicking()` on this target.
+        use std::thread;
+        use web_thread_shim::{Builder as ThreadBuilder, JoinHandle};
+    } else {
+        use std::thread::{self, Builder as ThreadBuilder, JoinHandle};
+    }
+}
 
 use crate::executor::FallibleTask;
 use bevy_platform::sync::Arc;
@@ -176,7 +185,7 @@ impl TaskPool {
                 } else {
                     format!("TaskPool ({i})")
                 };
-                let mut thread_builder = thread::Builder::new().name(thread_name);
+                let mut thread_builder = ThreadBuilder::new().name(thread_name);
 
                 if let Some(stack_size) = builder.stack_size {
                     thread_builder = thread_builder.stack_size(stack_size);

@@ -17,7 +17,7 @@ use crate::cfg;
 /// Tasks that panic get immediately canceled. Awaiting a canceled task also causes a panic.
 #[must_use = "Tasks are canceled when dropped, use `.detach()` to run them in the background."]
 pub struct Task<T>(
-    cfg::web! {
+    cfg::web_single! {
         if {
             async_channel::Receiver<Result<T, Panic>>
         } else {
@@ -27,7 +27,7 @@ pub struct Task<T>(
 );
 
 // Custom constructors for web and non-web platforms
-cfg::web! {
+cfg::web_single! {
     if {
         impl<T: 'static> Task<T> {
             /// Creates a new task by passing the given future to the web
@@ -61,7 +61,7 @@ impl<T> Task<T> {
     ///
     /// When building for the web, this method has no effect.
     pub fn detach(self) {
-        cfg::web! {
+        cfg::web_single! {
             if {
                 // Tasks are already treated as detached on the web.
             } else {
@@ -82,7 +82,7 @@ impl<T> Task<T> {
     ///
     /// Canceling tasks is unsupported on the web, and this is the same as awaiting the task.
     pub async fn cancel(self) -> Option<T> {
-        cfg::web! {
+        cfg::web_single! {
             if {
                 // Await the task and handle any panics.
                 match self.0.recv().await {
@@ -107,7 +107,7 @@ impl<T> Task<T> {
     /// Unlike poll, it doesn't resolve the final value, it just checks if the task has finished.
     /// Note that in a multithreaded environment, this task can be finished immediately after calling this function.
     pub fn is_finished(&self) -> bool {
-        cfg::web! {
+        cfg::web_single! {
             if {
                 // We treat the task as unfinished until the result is sent over the channel.
                 !self.0.is_empty()
@@ -122,7 +122,7 @@ impl<T> Task<T> {
 impl<T> Future for Task<T> {
     type Output = T;
 
-    cfg::web! {
+    cfg::web_single! {
         if {
             fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 // `recv()` returns a future, so we just poll that and hand the result.
@@ -164,7 +164,7 @@ impl<T> fmt::Debug for Task<T> {
 }
 
 // Utilities for catching unwinds on the web.
-cfg::web! {
+cfg::web_single! {
     use alloc::boxed::Box;
     use core::{
         panic::{AssertUnwindSafe, UnwindSafe},
