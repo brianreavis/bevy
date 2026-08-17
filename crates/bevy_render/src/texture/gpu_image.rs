@@ -4,11 +4,47 @@ use crate::{
     renderer::{RenderDevice, RenderQueue},
 };
 use bevy_asset::{AssetId, RenderAssetUsages};
-use bevy_ecs::system::{lifetimeless::SRes, SystemParamItem};
+use bevy_ecs::{
+    prelude::Resource,
+    system::{
+        lifetimeless::{SRes, SResMut},
+        SystemParamItem,
+    },
+};
 use bevy_image::{Image, ImageSampler};
 use bevy_math::{AspectRatio, UVec2};
 use tracing::warn;
 use wgpu::{Extent3d, TextureFormat, TextureViewDescriptor};
+
+/// Render-world budget/confirmation state for images marked
+/// [`Image::deferrable_upload`]. Absent by default: without it, deferrable
+/// images upload exactly like any other image and nothing is recorded.
+///
+/// When the host app inserts it into the render app, each frame's
+/// deferrable uploads stop once `spent_bytes` reaches
+/// `budget_bytes_per_frame`; the remainder are requeued by the standard
+/// `prepare_assets` retry path. At least one deferrable image is written
+/// per frame regardless of budget, so the queue always drains. The host
+/// owns the per-frame lifecycle: it must drain `uploaded`, check
+/// `deferred`, and reset `spent_bytes`/`deferred` after
+/// `RenderSystems::PrepareAssets` each frame. Non-deferrable images never
+/// consult this resource.
+#[derive(Resource, Default)]
+pub struct DeferrableImageUploads {
+    /// Per-frame ceiling, in bytes, on `write_texture` traffic from
+    /// deferrable images. Soft: only whole images are written, and the
+    /// first image of a frame is written even if it alone exceeds this.
+    pub budget_bytes_per_frame: usize,
+    /// Bytes of deferrable image data written so far this frame.
+    pub spent_bytes: usize,
+    /// Set when at least one deferrable upload was pushed to a later frame
+    /// this frame. The host should schedule another frame when set, or the
+    /// requeued uploads sit invisible to a reactive run loop.
+    pub deferred: bool,
+    /// Deferrable images whose texels were handed to the queue this frame,
+    /// in upload order. The upload-confirmation feed.
+    pub uploaded: Vec<AssetId<Image>>,
+}
 
 /// The GPU-representation of an [`Image`].
 /// Consists of the [`Texture`], its [`TextureView`] and the corresponding [`Sampler`], and the texture's size.
@@ -30,6 +66,7 @@ impl RenderAsset for GpuImage {
         SRes<RenderDevice>,
         SRes<RenderQueue>,
         SRes<DefaultImageSampler>,
+        Option<SResMut<DeferrableImageUploads>>,
     );
 
     #[inline]
@@ -63,12 +100,29 @@ impl RenderAsset for GpuImage {
     /// Converts the extracted image into a [`GpuImage`].
     fn prepare_asset(
         image: Self::SourceAsset,
-        _: AssetId<Self::SourceAsset>,
-        (render_device, render_queue, default_sampler): &mut SystemParamItem<Self::Param>,
+        id: AssetId<Self::SourceAsset>,
+        (render_device, render_queue, default_sampler, deferrable_uploads): &mut SystemParamItem<
+            Self::Param,
+        >,
         previous_asset: Option<&Self>,
     ) -> Result<Self, PrepareAssetError<Self::SourceAsset>> {
         let had_data = image.data.is_some();
         let texture = if let Some(ref data) = image.data {
+            if image.deferrable_upload {
+                if let Some(uploads) = deferrable_uploads.as_mut() {
+                    // `spent_bytes > 0` keeps the guarantee that the first
+                    // deferrable image of a frame is always written, even
+                    // under a budget smaller than one image.
+                    if uploads.spent_bytes > 0
+                        && uploads.spent_bytes >= uploads.budget_bytes_per_frame
+                    {
+                        uploads.deferred = true;
+                        return Err(PrepareAssetError::RetryNextUpdate(image));
+                    }
+                    uploads.spent_bytes += data.len();
+                    uploads.uploaded.push(id);
+                }
+            }
             render_device.create_texture_with_data(
                 render_queue,
                 &image.texture_descriptor,

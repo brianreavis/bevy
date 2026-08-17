@@ -136,6 +136,12 @@ pub struct ImageLoaderSettings {
     /// uniform type.
     #[serde(default)]
     pub array_layout: Option<ImageArrayLayout>,
+    /// Sets [`Image::deferrable_upload`] on the loaded image: its GPU
+    /// upload may be spread across frames by a per-frame upload budget.
+    /// Only for images whose consumers wait on an upload-confirmation
+    /// signal before treating them as displayable.
+    #[serde(default)]
+    pub deferrable_upload: bool,
 }
 
 impl Default for ImageLoaderSettings {
@@ -147,6 +153,7 @@ impl Default for ImageLoaderSettings {
             sampler: ImageSampler::Default,
             asset_usage: RenderAssetUsages::default(),
             array_layout: None,
+            deferrable_upload: false,
         }
     }
 }
@@ -217,6 +224,8 @@ impl AssetLoader for ImageLoader {
             error: err,
             path: format!("{}", load_context.path().path().display()),
         })?;
+
+        image.deferrable_upload = settings.deferrable_upload;
 
         if let Some(format) = settings.texture_format {
             image.texture_descriptor.format = format;

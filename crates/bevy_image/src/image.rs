@@ -609,6 +609,13 @@ pub struct Image {
     pub asset_usage: RenderAssetUsages,
     /// Whether this image should be copied on the GPU when resized.
     pub copy_on_resize: bool,
+    /// Opt-in marker: this image's GPU upload may be deferred across frames
+    /// by a per-frame upload budget, and consumers of the image are prepared
+    /// to wait for it. Leave `false` (the default) for images whose
+    /// readiness is signaled by anything other than an upload-confirmation
+    /// loop, or that are re-uploaded after in-place mutation: a deferred
+    /// re-upload leaves the asset with no GPU texture until it is written.
+    pub deferrable_upload: bool,
 }
 
 /// Used in [`Image`], this determines what image sampler to use when rendering. The default setting,
@@ -1067,6 +1074,7 @@ impl Image {
             texture_view_descriptor: None,
             asset_usage,
             copy_on_resize: false,
+            deferrable_upload: false,
         }
     }
 
@@ -1198,6 +1206,7 @@ impl Image {
             }),
             asset_usage: RenderAssetUsages::default(),
             copy_on_resize: true,
+            deferrable_upload: false,
         }
     }
 
