@@ -5,7 +5,9 @@ use bevy_render::{
     diagnostic::RecordDiagnostics,
     render_graph::{NodeRunError, RenderGraphContext, ViewNode},
     render_phase::{TrackedRenderPass, ViewSortedRenderPhases},
-    render_resource::{CommandEncoderDescriptor, RenderPassDescriptor, StoreOp},
+    render_resource::{
+        CommandEncoderDescriptor, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+    },
     renderer::RenderContext,
     view::{ExtractedView, ViewDepthTexture, ViewTarget},
 };
@@ -45,13 +47,21 @@ impl ViewNode for MainTransparentPass2dNode {
         let diagnostics = render_context.diagnostic_recorder();
 
         let color_attachments = [Some(target.get_color_attachment())];
-        // NOTE: For the transparent pass we load the depth buffer. There should be no
-        // need to write to it, but store is set to `true` as a workaround for issue #3776,
-        // https://github.com/bevyengine/bevy/issues/3776
-        // so that wgpu does not clear the depth buffer.
-        // As the opaque and alpha mask passes run first, opaque meshes can occlude
-        // transparent ones.
-        let depth_stencil_attachment = Some(depth.get_attachment(StoreOp::Store));
+        // NOTE: For the transparent pass we bind the depth buffer READ-ONLY.
+        // Nothing in `Transparent2d` writes depth — the 2D transparent
+        // pipelines are all `depth_write_enabled: false` — so `depth_ops:
+        // None` costs nothing, keeps the buffer intact for later passes
+        // (which was the point of the `StoreOp::Store` workaround for issue
+        // #3776 this replaces), and additionally makes it legal to SAMPLE the
+        // same texture from a shader in this pass. Cartobloom's labels use
+        // that to ask, once per label, whether their anchor is behind terrain.
+        // As the opaque and alpha mask passes run first, opaque meshes can
+        // occlude transparent ones.
+        let depth_stencil_attachment = Some(RenderPassDepthStencilAttachment {
+            view: depth.view(),
+            depth_ops: None,
+            stencil_ops: None,
+        });
 
         render_context.add_command_buffer_generation_task(move |render_device| {
             // Command encoder setup

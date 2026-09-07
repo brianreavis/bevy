@@ -462,16 +462,45 @@ pub fn extract_core_2d_camera_phases(
     alpha_mask_2d_phases.retain(|camera_entity, _| live_entities.contains(camera_entity));
 }
 
+/// Extra usages for a 2D camera's view depth texture, beyond
+/// `RENDER_ATTACHMENT`. A post-process effect that reads the main pass's
+/// depth (a depth-based blur, say) inserts this on the render-world camera
+/// with `TEXTURE_BINDING` — the 2D counterpart of
+/// `Camera3d::depth_texture_usages`. Absent, the texture is created exactly
+/// as before.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Camera2dDepthTextureUsages(pub TextureUsages);
+
 pub fn prepare_core_2d_depth_textures(
     mut commands: Commands,
     mut texture_cache: ResMut<TextureCache>,
     render_device: Res<RenderDevice>,
     transparent_2d_phases: Res<ViewSortedRenderPhases<Transparent2d>>,
     opaque_2d_phases: Res<ViewBinnedRenderPhases<Opaque2d>>,
-    views_2d: Query<(Entity, &ExtractedCamera, &ExtractedView, &Msaa), (With<Camera2d>,)>,
+    views_2d: Query<
+        (
+            Entity,
+            &ExtractedCamera,
+            &ExtractedView,
+            &Msaa,
+            Option<&Camera2dDepthTextureUsages>,
+        ),
+        (With<Camera2d>,),
+    >,
 ) {
+    // Usages per target, unioned across every camera that draws to it —
+    // including ones skipped below, since a camera that is not drawing this
+    // frame still knows what it will need when it does.
+    let mut target_usages = <HashMap<_, TextureUsages>>::default();
+    for (_, camera, _, _, extra_usages) in &views_2d {
+        let usages = target_usages
+            .entry(camera.target.clone())
+            .or_insert(TextureUsages::RENDER_ATTACHMENT);
+        *usages |= extra_usages.map_or(TextureUsages::empty(), |extra| extra.0);
+    }
+
     let mut textures = <HashMap<_, _>>::default();
-    for (view, camera, extracted_view, msaa) in &views_2d {
+    for (view, camera, extracted_view, msaa, _extra_usages) in &views_2d {
         if !opaque_2d_phases.contains_key(&extracted_view.retained_view_entity)
             || !transparent_2d_phases.contains_key(&extracted_view.retained_view_entity)
         {
@@ -482,6 +511,17 @@ pub fn prepare_core_2d_depth_textures(
             continue;
         };
 
+        // Cameras sharing a target share the texture, so its usages are the
+        // UNION of what they all ask for, gathered above. Letting the first
+        // camera seen decide meant a camera that asked for `TEXTURE_BINDING`
+        // silently received an attachment-only texture whenever some other
+        // camera on the same target was visited first — a validation failure
+        // at the first attempt to bind it, from a system nowhere near the
+        // camera that caused it.
+        let usage = target_usages
+            .get(&camera.target)
+            .copied()
+            .unwrap_or(TextureUsages::RENDER_ATTACHMENT);
         let cached_texture = textures
             .entry(camera.target.clone())
             .or_insert_with(|| {
@@ -493,7 +533,7 @@ pub fn prepare_core_2d_depth_textures(
                     sample_count: msaa.samples(),
                     dimension: TextureDimension::D2,
                     format: CORE_2D_DEPTH_FORMAT,
-                    usage: TextureUsages::RENDER_ATTACHMENT,
+                    usage,
                     view_formats: &[],
                 };
 
