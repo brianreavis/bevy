@@ -71,6 +71,15 @@ pub struct ExtractedWindow {
     pub needs_initial_present: bool,
     /// https://developer.apple.com/documentation/quartzcore/cametallayer/presentswithtransaction?language=objc
     pub metal_surface_presents_with_transaction: bool,
+    /// Skip this window entirely: no swapchain acquire, no camera graph, no
+    /// present. The surface keeps showing the last image it was presented,
+    /// because a `CAMetalLayer` (and a WebGPU canvas) only changes contents
+    /// on present. Size and present-mode changes are held back while set,
+    /// so the surface is not reconfigured underneath that image; the first
+    /// extract after clearing sees the difference and reconfigures.
+    ///
+    /// Written by an extract system ordered before [`extract_windows`].
+    pub presentation_paused: bool,
 }
 
 impl ExtractedWindow {
@@ -143,7 +152,7 @@ impl DerefMut for ExtractedWindows {
     }
 }
 
-fn extract_windows(
+pub fn extract_windows(
     mut extracted_windows: ResMut<ExtractedWindows>,
     mut closing: Extract<MessageReader<WindowClosing>>,
     windows: Extract<
@@ -189,6 +198,7 @@ fn extract_windows(
             alpha_mode: window.composite_alpha_mode,
             needs_initial_present: true,
             metal_surface_presents_with_transaction: window.metal_surface_presents_with_transaction,
+            presentation_paused: false,
         });
 
         if extracted_window.swap_chain_texture.is_none() {
@@ -197,6 +207,15 @@ fn extract_windows(
             // next update as an optimization. `prepare_windows` will only acquire a new
             // swap chain texture if needed.
             extracted_window.swap_chain_texture_view = None;
+        }
+
+        if extracted_window.presentation_paused {
+            // Reconfiguring would discard the drawable the layer is showing.
+            // Leave the stored size and mode alone so the first unpaused
+            // extract compares against them and reconfigures then.
+            extracted_window.size_changed = false;
+            extracted_window.present_mode_changed = false;
+            continue;
         }
         extracted_window.size_changed = new_width != extracted_window.physical_width
             || new_height != extracted_window.physical_height;
@@ -282,6 +301,16 @@ pub fn prepare_windows(
         let Some(surface_data) = window_surfaces.surfaces.get(&window.entity) else {
             continue;
         };
+
+        // A paused window acquires nothing. Dropping a held, unpresented
+        // drawable returns it to the layer's pool without changing what the
+        // layer displays, and with no texture view the camera driver's clear
+        // pass and `present` both skip this window.
+        if window.presentation_paused {
+            drop(window.swap_chain_texture.take());
+            window.swap_chain_texture_view.take();
+            continue;
+        }
 
         // We didn't present the previous frame, so we can keep using our existing swapchain texture.
         // Not on the web: WebGPU destroys the canvas texture at the end of
