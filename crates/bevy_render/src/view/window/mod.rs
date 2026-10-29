@@ -13,6 +13,8 @@ use core::{
     ops::{Deref, DerefMut},
 };
 use surface_target::{RenderSurface, SurfaceCreationError, SurfaceTargetSource};
+#[cfg(target_vendor = "apple")]
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use wgpu::{SurfaceConfiguration, TextureFormat, TextureUsages, TextureViewDescriptor};
 
@@ -32,6 +34,12 @@ impl Plugin for WindowRenderPlugin {
                 .init_resource::<ExtractedWindows>()
                 .init_resource::<WindowSurfaces>()
                 .add_systems(ExtractSchedule, extract_windows)
+                .add_systems(
+                    Render,
+                    wait_for_pending_presents
+                        .before(create_send_surfaces)
+                        .before(prepare_windows),
+                )
                 .add_systems(
                     Render,
                     (create_send_surfaces, create_non_send_surfaces)
@@ -80,6 +88,34 @@ pub struct ExtractedWindow {
     ///
     /// Written by an extract system ordered before [`extract_windows`].
     pub presentation_paused: bool,
+    /// A present queued on the main thread (transaction presents) that may
+    /// still hold this window's drawable. Waited on before the surface is
+    /// acquired from, reconfigured or dropped.
+    #[cfg(target_vendor = "apple")]
+    pending_present: Option<Arc<PresentFence>>,
+}
+
+/// Signalled once a present queued on the main thread has run.
+#[cfg(target_vendor = "apple")]
+#[derive(Default)]
+struct PresentFence {
+    done: std::sync::Mutex<bool>,
+    signal: std::sync::Condvar,
+}
+
+#[cfg(target_vendor = "apple")]
+impl PresentFence {
+    fn signal(&self) {
+        *self.done.lock().unwrap() = true;
+        self.signal.notify_all();
+    }
+
+    fn wait(&self) {
+        let mut done = self.done.lock().unwrap();
+        while !*done {
+            done = self.signal.wait(done).unwrap();
+        }
+    }
 }
 
 impl ExtractedWindow {
@@ -93,6 +129,14 @@ impl ExtractedWindow {
             frame.texture.create_view(&texture_view_descriptor),
         ));
         self.swap_chain_texture = Some(SurfaceTexture::from(frame));
+    }
+
+    /// Blocks until a present queued on the main thread has run.
+    pub fn wait_for_pending_present(&mut self) {
+        #[cfg(target_vendor = "apple")]
+        if let Some(fence) = self.pending_present.take() {
+            fence.wait();
+        }
     }
 
     fn has_swapchain_texture(&self) -> bool {
@@ -109,25 +153,42 @@ impl ExtractedWindow {
             surface_texture.present(queue);
             #[cfg(target_vendor = "apple")]
             {
-                // If presenting with a CATransaction, we need to present on the same thread as the
-                // transaction (which is almost always the main thread). We need to block (exec_sync),
-                // otherwise we run the risk wgpu panicking on the next frame.
-                //
-                // From the wgpu docs:
-                // "If a SurfaceTexture referencing this surface is alive when the swapchain is
-                // recreated, recreating the swapchain will panic."
-                //
-                // TODO: Make async and block before get_current_texture
+                // A transaction present has to run on the thread that owns the
+                // transaction (the main thread). Queued rather than waited
+                // for, so the next frame's update, extract and encode overlap
+                // the main thread's present and the layout pass of the
+                // transaction's commit. Until it has run, the surface texture
+                // is alive, and wgpu panics if the swapchain is recreated (or
+                // another texture acquired) under it: everything that does
+                // either waits on `pending_present` first.
                 if self.metal_surface_presents_with_transaction
                     && !objc2_foundation::NSThread::currentThread().isMainThread()
                 {
-                    dispatch2::DispatchQueue::main().exec_sync(move || {
-                        surface_texture.present(queue);
+                    let fence = Arc::new(PresentFence::default());
+                    let signal = fence.clone();
+                    let queue = queue.clone();
+                    dispatch2::DispatchQueue::main().exec_async(move || {
+                        surface_texture.present(&queue);
+                        signal.signal();
                     });
+                    self.pending_present = Some(fence);
                 } else {
                     surface_texture.present(queue);
                 }
             }
+        }
+    }
+}
+
+/// A window removed, or the render world torn down, while its present is
+/// still queued would leave the main thread presenting into a surface that is
+/// gone. Not on the main thread: the queued present can only run there, so
+/// waiting would deadlock (and nothing presenting from the main thread queues).
+#[cfg(target_vendor = "apple")]
+impl Drop for ExtractedWindow {
+    fn drop(&mut self) {
+        if !objc2_foundation::NSThread::currentThread().isMainThread() {
+            self.wait_for_pending_present();
         }
     }
 }
@@ -167,6 +228,8 @@ pub fn extract_windows(
     mut window_surfaces: ResMut<WindowSurfaces>,
 ) {
     for removed_window in removed.read() {
+        // Dropping the window waits out its queued present before the
+        // surface goes.
         extracted_windows.remove(&removed_window);
         window_surfaces.remove(&removed_window);
     }
@@ -199,7 +262,21 @@ pub fn extract_windows(
             needs_initial_present: true,
             metal_surface_presents_with_transaction: window.metal_surface_presents_with_transaction,
             presentation_paused: false,
+            #[cfg(target_vendor = "apple")]
+            pending_present: None,
         });
+
+        // A drawable takes its layer's `presentsWithTransaction` when it is
+        // acquired, so one still held from before a change would be presented
+        // the other way. Dropping it returns it to the layer's pool unshown;
+        // the host updates the layer before the next acquire.
+        if extracted_window.metal_surface_presents_with_transaction
+            != window.metal_surface_presents_with_transaction
+        {
+            extracted_window.metal_surface_presents_with_transaction =
+                window.metal_surface_presents_with_transaction;
+            drop(extracted_window.swap_chain_texture.take());
+        }
 
         if extracted_window.swap_chain_texture.is_none() {
             // If we called present on the previous swap-chain texture last update,
@@ -266,6 +343,16 @@ impl WindowSurfaces {
     fn remove(&mut self, window: &Entity) {
         self.surfaces.remove(window);
         self.configured_windows.remove(window);
+    }
+}
+
+/// Waits out presents still queued on the main thread from the last frame
+/// (see [`ExtractedWindow::present`]) before any surface is reconfigured or
+/// acquired from. Runs as late as that allows, so the frame's update, extract
+/// and earlier render work overlap them.
+pub fn wait_for_pending_presents(mut windows: ResMut<ExtractedWindows>) {
+    for window in windows.windows.values_mut() {
+        window.wait_for_pending_present();
     }
 }
 
