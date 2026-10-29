@@ -604,6 +604,19 @@ impl PipelineCache {
                     .as_deref()
                     .filter(|_| has_explicit_layout)
                     .and_then(|table| table.lookup_render_fragment(&device, &descriptor));
+                // Both stages come from the bundle or neither does. wgpu
+                // checks the fragment's inputs against the vertex stage's
+                // outputs, and a passthrough module declares none, so a
+                // precompiled vertex stage paired with a runtime-compiled
+                // fragment fails validation ("Location[0] ... is not provided
+                // by the previous stage outputs"). That happens whenever the
+                // bundle holds only one of the two stage keys.
+                let (precompiled_vertex, precompiled_fragment) =
+                    match (precompiled_vertex, precompiled_fragment) {
+                        (Some(_), None) if descriptor.fragment.is_some() => (None, None),
+                        (None, Some(_)) => (None, None),
+                        pair => pair,
+                    };
 
                 let mut shader_cache = shader_cache.lock().unwrap();
                 let mut layout_cache = layout_cache.lock().unwrap();
