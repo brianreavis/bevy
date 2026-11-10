@@ -25,6 +25,15 @@
 //! stage. The vendored wgpu-hal Metal backend dumps the corresponding MSL
 //! keyed by the same label (`WGPU_HAL_DUMP_MSL_DIR`), and the offline
 //! tool joins the two on `(label, stage)` to build the manifest.
+//!
+//! Harvest mode also writes `pipeline-fixed.jsonl`: per pipeline, the
+//! fixed-function state no stage key covers (targets, depth-stencil,
+//! multisample, primitive), for audits that need to tell apart pipelines
+//! sharing their shaders.
+//!
+//! Runtime: [`PrecompiledShaders`] can hold several bundles (the engine's,
+//! plus any an app registers for its project's generated shaders), each
+//! disabled on its own if one of its blobs is rejected.
 
 use alloc::borrow::Cow;
 use bevy_asset::Handle;
@@ -236,6 +245,30 @@ pub(crate) fn maybe_harvest_render(
     let tag = harvest_tag(id);
     let label = descriptor.label.as_deref().unwrap_or("<unlabeled>").to_owned();
     let vertex_canonical = render_vertex_stage_canonical(descriptor);
+    // Fixed-function state, outside every stage key: lets a pipeline audit
+    // tell apart pipelines that share their shaders.
+    let fixed = format!(
+        "targets={:?};depth_stencil={:?};multisample={:?};primitive={:?}",
+        descriptor.fragment.as_ref().map(|fragment| &fragment.targets),
+        descriptor.depth_stencil,
+        descriptor.multisample,
+        descriptor.primitive,
+    );
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("pipeline-fixed.jsonl"))
+    {
+        let escape = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+        let _ = file.write_all(
+            format!(
+                "{{\"variant_tag\":\"{tag}\",\"label\":\"{}\",\"fixed\":\"{}\"}}\n",
+                escape(&label),
+                escape(&fixed)
+            )
+            .as_bytes(),
+        );
+    }
     record(
         dir,
         &tag,
@@ -275,6 +308,7 @@ pub(crate) fn maybe_harvest_compute(
 /// One manifest entry: which deduplicated MSL blob a stage key resolves
 /// to, the naga-mangled entry name inside it, and the workgroup size
 /// (compute only; render stages carry zeros).
+#[derive(Clone)]
 pub struct PrecompiledStageEntry {
     pub msl_hash: String,
     pub entry: String,
@@ -290,49 +324,116 @@ pub struct PrecompiledStageHit {
     pub entry_point: String,
 }
 
+/// One installed bundle: the directory its `<msl_hash>.metallib` blobs live
+/// in, and its own state. Shared (behind an `Arc`) by every table that
+/// includes it, so a disable or a hit count survives the table being
+/// extended with another bundle.
+struct PrecompiledBundle {
+    dir: PathBuf,
+    /// Set when one of this bundle's metallibs is rejected at load (e.g.
+    /// built for an MSL language version this OS doesn't support): one bad
+    /// blob means the bundle doesn't fit this device, so all of its stages
+    /// fall back to runtime compilation. Other bundles keep serving.
+    disabled: AtomicBool,
+    hits: AtomicU32,
+}
+
 /// The precompiled-shader table, installed on the [`PipelineCache`] by the
-/// embedder (the C API loads + validates `shaders-manifest.json` and calls
-/// `PipelineCache::set_precompiled_shaders`). Metallib blobs
-/// load lazily (`newLibraryWithData`) and are cached per content hash —
-/// stages sharing MSL share one `MTLLibrary`.
+/// embedder (the C API loads + validates each `shaders-manifest.json` and
+/// calls `PipelineCache::set_precompiled_shaders`). It can hold several
+/// bundles: the engine's own, plus any an app registers for its project's
+/// generated shaders. Metallib blobs load lazily (`newLibraryWithData`) and
+/// are cached per content hash across bundles, so stages sharing MSL share
+/// one `MTLLibrary`.
 ///
 /// Requires `wgpu::Features::PASSTHROUGH_SHADERS` on the device.
 ///
 /// [`PipelineCache`]: super::PipelineCache
 pub struct PrecompiledShaders {
-    dir: PathBuf,
-    stages: HashMap<String, PrecompiledStageEntry>,
-    modules: Mutex<HashMap<String, Arc<WgpuWrapper<ShaderModule>>>>,
-    hits: AtomicU32,
-    misses: AtomicU32,
-    /// Set when a metallib is rejected at load (e.g. built for an MSL
-    /// language version this OS doesn't support): one bad blob means the
-    /// bundle doesn't fit this device, so the whole table falls back to
-    /// runtime compilation instead of failing per stage.
-    disabled: AtomicBool,
+    bundles: Vec<Arc<PrecompiledBundle>>,
+    /// Stage key → (index into `bundles`, entry).
+    stages: HashMap<String, (usize, PrecompiledStageEntry)>,
+    modules: Arc<Mutex<HashMap<String, Arc<WgpuWrapper<ShaderModule>>>>>,
+    misses: Arc<AtomicU32>,
 }
 
 impl PrecompiledShaders {
-    /// `dir` holds `<msl_hash>.metallib` files; `stages` maps stage keys to
-    /// manifest entries (parsed and validated by the embedder).
+    /// A table holding one bundle. `dir` holds `<msl_hash>.metallib` files;
+    /// `stages` maps stage keys to manifest entries (parsed and validated by
+    /// the embedder).
     pub fn new(dir: PathBuf, stages: HashMap<String, PrecompiledStageEntry>) -> Self {
         Self {
-            dir,
-            stages,
-            modules: Mutex::new(HashMap::new()),
-            hits: AtomicU32::new(0),
-            misses: AtomicU32::new(0),
-            disabled: AtomicBool::new(false),
+            bundles: Vec::new(),
+            stages: HashMap::new(),
+            modules: Arc::new(Mutex::new(HashMap::new())),
+            misses: Arc::new(AtomicU32::new(0)),
         }
+        .with_bundle(dir, stages)
+    }
+
+    /// This table plus one more bundle. A stage key already in the table
+    /// keeps its entry: within one shader fingerprint the same key is the
+    /// same MSL (each harvest fails on a collision), so which bundle serves
+    /// it doesn't matter, and the earlier one (the engine's) keeps serving.
+    /// Swapping the result into the [`PipelineCache`] is safe at any time:
+    /// each pipeline creation holds the table it was queued with.
+    ///
+    /// [`PipelineCache`]: super::PipelineCache
+    pub fn with_bundle(&self, dir: PathBuf, stages: HashMap<String, PrecompiledStageEntry>) -> Self {
+        let index = self.bundles.len();
+        let mut bundles = self.bundles.clone();
+        bundles.push(Arc::new(PrecompiledBundle {
+            dir,
+            disabled: AtomicBool::new(false),
+            hits: AtomicU32::new(0),
+        }));
+        let mut merged = self.stages.clone();
+        for (key, entry) in stages {
+            merged.entry(key).or_insert((index, entry));
+        }
+        Self {
+            bundles,
+            stages: merged,
+            modules: self.modules.clone(),
+            misses: self.misses.clone(),
+        }
+    }
+
+    /// Stage keys the table serves, across all bundles.
+    pub fn len(&self) -> usize {
+        self.stages.len()
+    }
+
+    /// `true` when the table serves no stage keys.
+    pub fn is_empty(&self) -> bool {
+        self.stages.is_empty()
     }
 
     /// `(hits, misses)` across all stage lookups so far — the "precompiled
     /// shaders: X/Y" diagnostic.
     pub fn stats(&self) -> (u32, u32) {
         (
-            self.hits.load(Ordering::Relaxed),
+            self.bundles
+                .iter()
+                .map(|bundle| bundle.hits.load(Ordering::Relaxed))
+                .sum(),
             self.misses.load(Ordering::Relaxed),
         )
+    }
+
+    /// Per bundle, in install order: its directory, the stages it served, and
+    /// whether it was disabled by a rejected blob.
+    pub fn bundle_stats(&self) -> Vec<(PathBuf, u32, bool)> {
+        self.bundles
+            .iter()
+            .map(|bundle| {
+                (
+                    bundle.dir.clone(),
+                    bundle.hits.load(Ordering::Relaxed),
+                    bundle.disabled.load(Ordering::Relaxed),
+                )
+            })
+            .collect()
     }
 
     pub fn lookup_render_vertex(
@@ -384,20 +485,21 @@ impl PrecompiledShaders {
     }
 
     fn lookup(&self, device: &RenderDevice, stage_key: &str) -> Option<PrecompiledStageHit> {
-        if self.disabled.load(Ordering::Relaxed) {
-            self.misses.fetch_add(1, Ordering::Relaxed);
-            return None;
-        }
-        let Some(entry) = self.stages.get(stage_key) else {
+        let Some((bundle_index, entry)) = self.stages.get(stage_key) else {
             self.misses.fetch_add(1, Ordering::Relaxed);
             return None;
         };
+        let bundle = &self.bundles[*bundle_index];
+        if bundle.disabled.load(Ordering::Relaxed) {
+            self.misses.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
         let module = {
             let mut modules = self.modules.lock().unwrap();
             match modules.get(&entry.msl_hash) {
                 Some(module) => module.clone(),
                 None => {
-                    let path = self.dir.join(format!("{}.metallib", entry.msl_hash));
+                    let path = bundle.dir.join(format!("{}.metallib", entry.msl_hash));
                     let bytes = match std::fs::read(&path) {
                         Ok(bytes) => bytes,
                         Err(err) => {
@@ -453,10 +555,11 @@ impl PrecompiledShaders {
                         bevy_tasks::futures::now_or_never(validation_scope.pop()).flatten();
                     if let Some(error) = internal_error.or(validation_error) {
                         tracing::warn!(
-                            "precompiled shader library {} rejected ({error}) — disabling the precompiled bundle, falling back to runtime compilation",
-                            path.display()
+                            "precompiled shader library {} rejected ({error}) — disabling the precompiled bundle {}, falling back to runtime compilation",
+                            path.display(),
+                            bundle.dir.display()
                         );
-                        self.disabled.store(true, Ordering::Relaxed);
+                        bundle.disabled.store(true, Ordering::Relaxed);
                         self.misses.fetch_add(1, Ordering::Relaxed);
                         return None;
                     }
@@ -466,10 +569,56 @@ impl PrecompiledShaders {
                 }
             }
         };
-        self.hits.fetch_add(1, Ordering::Relaxed);
+        bundle.hits.fetch_add(1, Ordering::Relaxed);
         Some(PrecompiledStageHit {
             module,
             entry_point: entry.entry.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::*;
+
+    fn entry(msl_hash: &str) -> PrecompiledStageEntry {
+        PrecompiledStageEntry {
+            msl_hash: msl_hash.to_string(),
+            entry: "main".to_string(),
+            wg_size: [0, 0, 0],
+        }
+    }
+
+    #[test]
+    fn an_added_bundle_serves_only_keys_the_table_lacks() {
+        let engine = PrecompiledShaders::new(
+            PathBuf::from("engine"),
+            HashMap::from([("a".to_string(), entry("engine-a"))]),
+        );
+        let merged = engine.with_bundle(
+            PathBuf::from("app"),
+            HashMap::from([
+                ("a".to_string(), entry("app-a")),
+                ("b".to_string(), entry("app-b")),
+            ]),
+        );
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged.stages["a"].0, 0);
+        assert_eq!(merged.stages["a"].1.msl_hash, "engine-a");
+        assert_eq!(merged.stages["b"].0, 1);
+        // The original table is untouched.
+        assert_eq!(engine.len(), 1);
+    }
+
+    #[test]
+    fn extending_a_table_shares_its_bundles_and_library_cache() {
+        let engine = PrecompiledShaders::new(PathBuf::from("engine"), HashMap::new());
+        let merged = engine.with_bundle(PathBuf::from("app"), HashMap::new());
+        assert!(Arc::ptr_eq(&engine.bundles[0], &merged.bundles[0]));
+        assert!(Arc::ptr_eq(&engine.modules, &merged.modules));
+        engine.bundles[0].disabled.store(true, Ordering::Relaxed);
+        let stats = merged.bundle_stats();
+        assert!(stats[0].2, "a disable is seen through every table holding the bundle");
+        assert!(!stats[1].2, "and only for that bundle");
     }
 }
