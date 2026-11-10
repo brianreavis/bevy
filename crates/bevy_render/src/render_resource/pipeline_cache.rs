@@ -256,7 +256,7 @@ pub struct PipelineCache {
     new_pipelines: Mutex<Vec<CachedPipeline>>,
     global_shader_defs: Vec<ShaderDefVal>,
     /// If `true`, disables asynchronous pipeline compilation.
-    /// This has no effect on macOS, wasm, or without the `multi_threaded` feature.
+    /// This has no effect on wasm or without the `multi_threaded` feature.
     synchronous_pipeline_compilation: bool,
     /// While `true`, overrides `synchronous_pipeline_compilation` and forces
     /// queued pipelines to compile asynchronously (in parallel across the
@@ -976,11 +976,7 @@ fn pipeline_error_context(cached_pipeline: &CachedPipeline) -> String {
     }
 }
 
-#[cfg(all(
-    not(target_arch = "wasm32"),
-    not(target_os = "macos"),
-    feature = "multi_threaded"
-))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))]
 fn create_pipeline_task(
     task: impl Future<Output = Result<Pipeline, PipelineCacheError>> + Send + 'static,
     sync: bool,
@@ -995,11 +991,7 @@ fn create_pipeline_task(
     }
 }
 
-#[cfg(any(
-    target_arch = "wasm32",
-    target_os = "macos",
-    not(feature = "multi_threaded")
-))]
+#[cfg(any(target_arch = "wasm32", not(feature = "multi_threaded")))]
 fn create_pipeline_task(
     task: impl Future<Output = Result<Pipeline, PipelineCacheError>> + Send + 'static,
     _sync: bool,
