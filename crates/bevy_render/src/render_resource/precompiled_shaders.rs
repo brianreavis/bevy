@@ -21,7 +21,7 @@
 //!
 //! Harvest mode (`BEVY_SHADER_HARVEST_DIR=<dir>`): each queued pipeline
 //! gets a unique `shader-harvest:<id>` label, and a
-//! `stage-keys.jsonl` record `{ variant_tag, stage, stage_key }` per
+//! `stage-keys.jsonl` record `{ variant_tag, stage, stage_key, shader }` per
 //! stage. The vendored wgpu-hal Metal backend dumps the corresponding MSL
 //! keyed by the same label (`WGPU_HAL_DUMP_MSL_DIR`), and the offline
 //! tool joins the two on `(label, stage)` to build the manifest.
@@ -36,7 +36,7 @@
 //! disabled on its own if one of its blobs is rejected.
 
 use alloc::borrow::Cow;
-use bevy_asset::Handle;
+use bevy_asset::{AssetId, Handle};
 use bevy_shader::Shader;
 use core::fmt::Write as _;
 use std::collections::HashMap;
@@ -76,12 +76,20 @@ fn key_hash(canonical: &str) -> String {
 /// otherwise the asset id — which for `load_internal_asset!` shaders is a
 /// `uuid_handle!` constant, stable across builds. Runtime-generated
 /// handles (neither path nor fixed UUID) would produce unstable keys, but
-/// those never match a harvest entry anyway — they just fall back.
-fn shader_identity(shader: &Handle<Shader>) -> String {
+/// those never match a harvest entry anyway — they just fall back. Harvest
+/// records carry it as their `shader` field, so a tool can pick out the
+/// pipelines of particular shaders without parsing the canonical string.
+pub fn shader_identity(shader: &Handle<Shader>) -> String {
     match shader.path() {
         Some(path) => path.to_string(),
-        None => format!("{:?}", shader.id()),
+        None => shader_id_identity(shader.id()),
     }
+}
+
+/// [`shader_identity`] of a shader added without a path (by id alone), such
+/// as a runtime-generated one.
+pub fn shader_id_identity(id: AssetId<Shader>) -> String {
+    format!("{id:?}")
 }
 
 /// Canonical-string tail shared by every stage: defs, layout, immediates,
@@ -214,6 +222,7 @@ fn record(
     variant_tag: &str,
     stage: &str,
     stage_key: &str,
+    shader: &Handle<Shader>,
     label: &str,
     canonical: &str,
 ) {
@@ -221,7 +230,8 @@ fn record(
     let escaped_label = escape(label);
     let escaped_canonical = escape(canonical);
     let line = format!(
-        "{{\"variant_tag\":\"{variant_tag}\",\"stage\":\"{stage}\",\"stage_key\":\"{stage_key}\",\"label\":\"{escaped_label}\",\"canonical\":\"{escaped_canonical}\"}}\n"
+        "{{\"variant_tag\":\"{variant_tag}\",\"stage\":\"{stage}\",\"stage_key\":\"{stage_key}\",\"shader\":\"{}\",\"label\":\"{escaped_label}\",\"canonical\":\"{escaped_canonical}\"}}\n",
+        escape(&shader_identity(shader)),
     );
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
@@ -274,15 +284,20 @@ pub(crate) fn maybe_harvest_render(
         &tag,
         "vertex",
         &key_hash(&vertex_canonical),
+        &descriptor.vertex.shader,
         &label,
         &vertex_canonical,
     );
-    if let Some(fragment_canonical) = render_fragment_stage_canonical(descriptor) {
+    if let (Some(fragment_canonical), Some(fragment)) = (
+        render_fragment_stage_canonical(descriptor),
+        descriptor.fragment.as_ref(),
+    ) {
         record(
             dir,
             &tag,
             "fragment",
             &key_hash(&fragment_canonical),
+            &fragment.shader,
             &label,
             &fragment_canonical,
         );
@@ -299,7 +314,15 @@ pub(crate) fn maybe_harvest_compute(
     let tag = harvest_tag(id);
     let label = descriptor.label.as_deref().unwrap_or("<unlabeled>").to_owned();
     let canonical = compute_stage_canonical(descriptor);
-    record(dir, &tag, "compute", &key_hash(&canonical), &label, &canonical);
+    record(
+        dir,
+        &tag,
+        "compute",
+        &key_hash(&canonical),
+        &descriptor.shader,
+        &label,
+        &canonical,
+    );
     descriptor.label = Some(tag.into());
 }
 
