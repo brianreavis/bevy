@@ -138,6 +138,21 @@ impl Default for MeshAllocatorSettings {
     }
 }
 
+/// One slab's occupancy, from [`MeshAllocator::slab_stats`].
+#[derive(Clone, Copy, Debug)]
+pub struct MeshSlabStats {
+    /// An index slab; otherwise vertices.
+    pub index: bool,
+    /// Bytes per element: the vertex stride, or the index size.
+    pub element_size: u64,
+    /// The slab buffer's size.
+    pub capacity_bytes: u64,
+    /// Bytes its allocations occupy.
+    pub used_bytes: u64,
+    /// A slab holding one mesh alone (over the large threshold).
+    pub large_object: bool,
+}
+
 /// The hardware buffer that mesh data lives in, as well as the range within
 /// that buffer.
 pub struct MeshBufferSlice<'a> {
@@ -427,6 +442,37 @@ impl MeshAllocator {
     /// Get the total size of all allocated slabs
     pub fn slabs_size(&self) -> u64 {
         self.slabs.iter().map(|slab| slab.1.buffer_size()).sum()
+    }
+
+    /// Per-slab occupancy: what each slab's buffer holds against its size.
+    /// For attributing memory by element layout; a general slab's capacity
+    /// minus its used bytes is the slack its growth and fragmentation hold.
+    pub fn slab_stats(&self) -> impl Iterator<Item = MeshSlabStats> + '_ {
+        self.slabs.values().map(|slab| match slab {
+            Slab::General(general) => {
+                let slot_size = general.element_layout.slot_size();
+                let used_slots: u64 = general
+                    .resident_allocations
+                    .values()
+                    .chain(general.pending_allocations.values())
+                    .map(|allocation| allocation.slot_count as u64)
+                    .sum();
+                MeshSlabStats {
+                    index: general.element_layout.class == ElementClass::Index,
+                    element_size: general.element_layout.size,
+                    capacity_bytes: slab.buffer_size(),
+                    used_bytes: used_slots * slot_size,
+                    large_object: false,
+                }
+            }
+            Slab::LargeObject(large) => MeshSlabStats {
+                index: large.element_layout.class == ElementClass::Index,
+                element_size: large.element_layout.size,
+                capacity_bytes: slab.buffer_size(),
+                used_bytes: slab.buffer_size(),
+                large_object: true,
+            },
+        })
     }
 
     pub fn allocations(&self) -> usize {
