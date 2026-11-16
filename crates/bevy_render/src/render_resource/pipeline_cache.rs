@@ -582,8 +582,10 @@ impl PipelineCache {
         drop(bindgroup_layout_cache);
 
         let precompiled_shaders = self.precompiled_shaders.clone();
+        let mut timing = compile_timing::PipelineTiming::queued();
         create_pipeline_task(
             async move {
+                timing.start();
                 // precompiled-metallib lookup. A hit serves the
                 // stage from an offline-compiled `MTLLibrary` (passthrough
                 // module; only `newFunctionWithName` happens at pipeline
@@ -657,6 +659,9 @@ impl PipelineCache {
                 };
 
                 drop((shader_cache, layout_cache));
+                timing.modules_done();
+                let all_precompiled = precompiled_vertex.is_some()
+                    && (descriptor.fragment.is_none() || precompiled_fragment.is_some());
 
                 let vertex_buffer_layouts = descriptor
                     .vertex
@@ -720,9 +725,9 @@ impl PipelineCache {
                     cache: None,
                 };
 
-                Ok(Pipeline::RenderPipeline(
-                    device.create_render_pipeline(&descriptor),
-                ))
+                let pipeline = device.create_render_pipeline(&descriptor);
+                timing.finish(descriptor.label, all_precompiled);
+                Ok(Pipeline::RenderPipeline(pipeline))
             },
             self.effective_synchronous_compilation(),
         )
@@ -754,8 +759,10 @@ impl PipelineCache {
         drop(bindgroup_layout_cache);
 
         let precompiled_shaders = self.precompiled_shaders.clone();
+        let mut timing = compile_timing::PipelineTiming::queued();
         create_pipeline_task(
             async move {
+                timing.start();
                 // precompiled-metallib lookup — see
                 // `start_create_render_pipeline` (including the
                 // implicit-layout restriction).
@@ -789,6 +796,8 @@ impl PipelineCache {
                 };
 
                 drop((shader_cache, layout_cache));
+                timing.modules_done();
+                let all_precompiled = precompiled_compute.is_some();
 
                 let descriptor = RawComputePipelineDescriptor {
                     label: descriptor.label.as_deref(),
@@ -809,9 +818,9 @@ impl PipelineCache {
                     cache: None,
                 };
 
-                Ok(Pipeline::ComputePipeline(
-                    device.create_compute_pipeline(&descriptor),
-                ))
+                let pipeline = device.create_compute_pipeline(&descriptor);
+                timing.finish(descriptor.label, all_precompiled);
+                Ok(Pipeline::ComputePipeline(pipeline))
             },
             self.effective_synchronous_compilation(),
         )
@@ -841,6 +850,16 @@ impl PipelineCache {
 
         for id in waiting_pipelines {
             self.process_pipeline(&mut pipelines[id], id);
+        }
+
+        let creating = self.waiting_pipelines.iter().any(|&id| {
+            matches!(
+                pipelines[id].state,
+                CachedPipelineState::Queued | CachedPipelineState::Creating(_)
+            )
+        });
+        if !creating {
+            compile_timing::flush(compile_threads);
         }
 
         self.pipelines = pipelines;
@@ -973,6 +992,19 @@ fn pipeline_error_context(cached_pipeline: &CachedPipeline) -> String {
         PipelineDescriptor::ComputePipelineDescriptor(desc) => {
             format(&desc.shader, &desc.entry_point, &desc.shader_defs)
         }
+    }
+}
+
+/// Threads asynchronous pipeline creation runs on, for the timing log; 1
+/// where pipelines are created on the calling thread.
+fn compile_threads() -> usize {
+    #[cfg(all(not(target_arch = "wasm32"), feature = "multi_threaded"))]
+    {
+        bevy_tasks::AsyncComputeTaskPool::get().thread_num()
+    }
+    #[cfg(any(target_arch = "wasm32", not(feature = "multi_threaded")))]
+    {
+        1
     }
 }
 
