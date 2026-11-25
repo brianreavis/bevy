@@ -212,18 +212,40 @@ impl AssetLoader for ImageLoader {
             }
         };
 
-        let mut image = Image::from_buffer(
-            &bytes,
-            image_type,
-            self.supported_compressed_formats,
-            settings.is_srgb,
-            settings.sampler.clone(),
-            settings.asset_usage,
-        )
-        .map_err(|err| FileTextureError {
-            error: err,
-            path: format!("{}", load_context.path().path().display()),
-        })?;
+        let offloaded = match (
+            crate::decode_offload::image_decode_offload(),
+            image_type.to_image_format(),
+        ) {
+            (Some(offload), Ok(format)) => offload.decode(format, bytes.clone()).await,
+            _ => None,
+        };
+        let offloaded = offloaded.and_then(|decoded| {
+            image::RgbaImage::from_raw(decoded.width, decoded.height, decoded.data)
+        });
+
+        let mut image = match offloaded {
+            Some(rgba) => {
+                let mut image = Image::from_dynamic(
+                    image::DynamicImage::ImageRgba8(rgba),
+                    settings.is_srgb,
+                    settings.asset_usage,
+                );
+                image.sampler = settings.sampler.clone();
+                image
+            }
+            None => Image::from_buffer(
+                &bytes,
+                image_type,
+                self.supported_compressed_formats,
+                settings.is_srgb,
+                settings.sampler.clone(),
+                settings.asset_usage,
+            )
+            .map_err(|err| FileTextureError {
+                error: err,
+                path: format!("{}", load_context.path().path().display()),
+            })?,
+        };
 
         image.deferrable_upload = settings.deferrable_upload;
 

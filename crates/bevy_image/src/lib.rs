@@ -27,6 +27,7 @@ mod basis;
 mod compressed_image_saver;
 #[cfg(feature = "dds")]
 mod dds;
+mod decode_offload;
 mod dynamic_texture_atlas_builder;
 #[cfg(feature = "exr")]
 mod exr_texture_loader;
@@ -42,6 +43,7 @@ mod texture_atlas_builder;
 pub use compressed_image_saver::*;
 #[cfg(feature = "dds")]
 pub use dds::*;
+pub use decode_offload::{set_image_decode_offload, DecodedRgba8, ImageDecodeOffload};
 pub use dynamic_texture_atlas_builder::*;
 #[cfg(feature = "exr")]
 pub use exr_texture_loader::*;
