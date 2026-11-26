@@ -1,5 +1,6 @@
 mod batched_uniform_buffer;
 mod bind_group;
+mod bind_group_cache;
 // offline-precompiled shader support (stage keys + harvest).
 mod precompiled_shaders;
 mod bind_group_entries;
@@ -19,6 +20,7 @@ mod texture;
 mod uniform_buffer;
 
 pub use bind_group::*;
+pub use bind_group_cache::*;
 pub use bind_group_entries::*;
 pub use precompiled_shaders::*;
 pub use bind_group_layout::*;
